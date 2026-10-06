@@ -2,6 +2,8 @@ services:
   app:
     build: .
     restart: unless-stopped
+    # el DNS del ISP no resuelve streamed.pk
+    dns: [1.1.1.1, 8.8.8.8]
     ports:
       - "83:8080"
     environment:

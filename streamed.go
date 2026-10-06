@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"math"
 	"net/url"
 	"sort"
@@ -18,11 +19,12 @@ var (
 
 func streamedJSON(u string) []map[string]any {
 	body, err := fetch(u, 5, 1500*time.Millisecond, 30*time.Second, nil)
-	if err != nil {
-		return nil
-	}
 	var out []map[string]any
-	if json.Unmarshal(body, &out) != nil {
+	if err == nil {
+		err = json.Unmarshal(body, &out)
+	}
+	if err != nil {
+		log.Printf("streamed fetch failed: %v", err)
 		return nil
 	}
 	return out
