@@ -5,7 +5,7 @@ services:
     # el DNS del ISP no resuelve streamed.pk
     dns: [1.1.1.1, 8.8.8.8]
     ports:
-      - "83:83"
+      - "83:8080"
     environment:
       STREAMED_API_BASE: ${STREAMED_API_BASE:-https://streamed.pk/api}
       STREAMED_IMG_BASE: ${STREAMED_IMG_BASE:-https://streamed.pk}
