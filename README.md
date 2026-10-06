@@ -1,7 +1,7 @@
 # go-sports-events
 
 ```
-docker compose up --build   # http://localhost:8080 (PORT para cambiarlo)
+docker compose up --build   # http://localhost:83
 ```
 
 ## Endpoints
