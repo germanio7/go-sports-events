@@ -1,0 +1,11 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      STREAMED_API_BASE: ${STREAMED_API_BASE:-https://streamed.pk/api}
+      STREAMED_IMG_BASE: ${STREAMED_IMG_BASE:-https://streamed.pk}
+      PELOTALIBRE_AGENDA_URL: ${PELOTALIBRE_AGENDA_URL:-https://pelotalibre.la/agenda.php}
+      PELISJUANITA_AGENDA_URL: ${PELISJUANITA_AGENDA_URL:-https://pelisjuanita.com/tv/api-agenda.php}
