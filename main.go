@@ -128,9 +128,6 @@ func directPlaylist(w http.ResponseWriter, events []Event) {
 	for _, e := range events {
 		for _, o := range e.Options {
 			u := resolved[o.URL]
-			if strings.HasPrefix(u, "/") {
-				u = "https://pelisjuanita.com" + u
-			}
 			title := fmt.Sprintf("%s vs %s (%s) — %s", e.Home, e.Away, deref(e.Time, ""), o.Source)
 			lines = append(lines, fmt.Sprintf(`#EXTINF:-1 group-title="%s",%s`, m3u(deref(e.League, "Otros")), m3u(title)), u)
 		}

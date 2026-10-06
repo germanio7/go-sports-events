@@ -99,6 +99,8 @@ func fetchOnce(client *http.Client, u string, headers map[string]string) ([]byte
 	if err != nil {
 		return nil, err
 	}
+	// Cloudflare bloquea el UA por defecto de Go (403).
+	req.Header.Set("User-Agent", userAgent)
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}

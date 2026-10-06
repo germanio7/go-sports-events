@@ -300,6 +300,10 @@ func parseJuanitaItem(it juanitaItem) (Event, bool) {
 		if src == "" {
 			src = "OP"
 		}
+		// iframes vienen relativos a la app /tv ("/embed/eventos.html?r=…"); en la raíz da 404.
+		if strings.HasPrefix(u, "/") {
+			u = strings.TrimSuffix(tvBase, "/") + u
+		}
 		embed := u
 		if d, ok := b64Param(u, "r"); ok {
 			embed = d

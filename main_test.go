@@ -47,3 +47,23 @@ func TestHelpers(t *testing.T) {
 		t.Error("no channels")
 	}
 }
+
+func TestParseJuanitaRelativeEmbed(t *testing.T) {
+	var it juanitaItem
+	it.Attributes.Desc = "Liga: A vs B"
+	it.Attributes.Embeds.Data = append(it.Attributes.Embeds.Data, struct {
+		Attributes struct {
+			Name   string `json:"embed_name"`
+			Iframe string `json:"embed_iframe"`
+		} `json:"attributes"`
+	}{})
+	it.Attributes.Embeds.Data[0].Attributes.Iframe = "/embed/eventos.html?r=aHR0cHM6Ly90dmY5MC5jb20vMS5waHA/c3RyZWFtPWJlaW5zcG9ydGVz"
+	e, ok := parseJuanitaItem(it)
+	if !ok || len(e.Options) != 1 {
+		t.Fatalf("bad event: %+v", e)
+	}
+	o := e.Options[0]
+	if o.URL != "https://pelisjuanita.com/tv/embed/eventos.html?r=aHR0cHM6Ly90dmY5MC5jb20vMS5waHA/c3RyZWFtPWJlaW5zcG9ydGVz" || o.Embed != "https://tvf90.com/1.php?stream=beinsportes" {
+		t.Fatalf("bad option: %+v", o)
+	}
+}
