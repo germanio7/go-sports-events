@@ -40,6 +40,14 @@ func main() {
 		w.Write(b)
 	})
 	mux.HandleFunc("GET /api/sports", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, getSports()) })
+	mux.HandleFunc("GET /api/scores", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		sport, league := q.Get("sport"), q.Get("league")
+		if sport == "" || league == "" {
+			sport, league = "soccer", "arg.1"
+		}
+		writeJSON(w, map[string]any{"sport": sport, "league": league, "scores": getScores(sport, league)})
+	})
 	mux.HandleFunc("GET /api/pelota/agenda", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"source": "futbollibrehd.me/api/agenda", "events": getPelota()})
 	})

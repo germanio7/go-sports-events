@@ -84,3 +84,41 @@ func TestExtinfLogo(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestParseESPN(t *testing.T) {
+	soccer := `{"events":[{"competitions":[{"id":"1","date":"2026-10-09T17:30Z","status":{"type":{"state":"in","shortDetail":"45'"}},
+		"competitors":[{"homeAway":"home","score":"2","team":{"displayName":"Aldosivi","logo":"https://x/aldo.png"}},{"homeAway":"away","score":"1","team":{"displayName":"Sarmiento"}}]}]}]}`
+	tennis := `{"events":[{"name":"China Open","groupings":[{"competitions":[{"id":"9","date":"2026-09-27T04:00Z","status":{"type":{"state":"post","shortDetail":"Final"}},
+		"competitors":[{"homeAway":"away","winner":true,"athlete":{"displayName":"Arthur Gea","flag":{"href":"https://x/fra.png"}},"linescores":[{"value":6},{"value":6}]},
+		{"homeAway":"home","athlete":{"displayName":"Te Rigele"},"linescores":[{"value":2},{"value":3}]}]}]}]}]}`
+
+	s, err := parseESPN([]byte(soccer), "arg.1")
+	want := Score{ID: "1", Date: "2026-10-09T14:30:00-03:00", State: "in", Detail: "45'", Home: Side{Name: "Aldosivi", Score: "2", Logo: "https://x/aldo.png"}, Away: Side{Name: "Sarmiento", Score: "1"}}
+	if err != nil || len(s) != 1 || !reflect.DeepEqual(s[0], want) {
+		t.Fatalf("soccer: %+v %v", s, err)
+	}
+	s, err = parseESPN([]byte(tennis), "atp")
+	if err != nil || len(s) != 1 || s[0].Tournament != "China Open" || s[0].Away != (Side{Name: "Arthur Gea", Score: "6 6", Winner: true, Logo: "https://x/fra.png"}) || s[0].Home.Score != "2 3" {
+		t.Fatalf("tennis: %+v %v", s, err)
+	}
+
+	mixed := `{"events":[{"name":"China Open","groupings":[
+		{"grouping":{"slug":"mens-singles"},"competitions":[{"id":"1"}]},
+		{"grouping":{"slug":"womens-singles"},"competitions":[{"id":"2"}]},
+		{"grouping":{"slug":"mens-doubles"},"competitions":[{"id":"3"}]}]}]}`
+	if s, _ = parseESPN([]byte(mixed), "atp"); len(s) != 2 || s[0].ID != "1" || s[1].Tournament != "China Open · dobles" {
+		t.Fatalf("atp: %+v", s)
+	}
+	if s, _ = parseESPN([]byte(mixed), "wta"); len(s) != 1 || s[0].ID != "2" {
+		t.Fatalf("wta: %+v", s)
+	}
+
+	f1 := `{"events":[{"name":"Bahrain GP","competitions":[{"id":"7","type":{"abbreviation":"Race"},"status":{"type":{"state":"post"}},"competitors":[
+		{"order":3,"athlete":{"displayName":"C"}},{"order":1,"winner":true,"athlete":{"displayName":"A","flag":{"href":"https://x/ned.png"}}},
+		{"order":4,"athlete":{"displayName":"D"}},{"order":2,"athlete":{"displayName":"B"}}]}]}]}`
+	s, _ = parseESPN([]byte(f1), "f1")
+	if len(s) != 1 || s[0].Session != "Race" || s[0].Tournament != "Bahrain GP" || len(s[0].Podium) != 3 ||
+		s[0].Podium[0] != (Side{Name: "A", Winner: true, Logo: "https://x/ned.png"}) || s[0].Podium[2].Name != "C" {
+		t.Fatalf("f1: %+v", s)
+	}
+}
