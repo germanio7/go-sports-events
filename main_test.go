@@ -74,3 +74,13 @@ func TestParseJuanitaRelativeEmbed(t *testing.T) {
 		t.Fatalf("bad logos: %v %v", e.HomeLogo, e.AwayLogo)
 	}
 }
+
+func TestExtinfLogo(t *testing.T) {
+	logo := "https://x/l.png"
+	if got := extinf("a", "G", "T", eventLogo(Event{AwayLogo: &logo})); got != `#EXTINF:-1 tvg-id="a" tvg-logo="https://x/l.png" group-title="G",T` {
+		t.Fatal(got)
+	}
+	if got := extinf("a", "G", "T", ""); got != `#EXTINF:-1 tvg-id="a" group-title="G",T` {
+		t.Fatal(got)
+	}
+}

@@ -98,8 +98,20 @@ func optionURLs(opts []Option) []string {
 	return out
 }
 
-func extinf(id, group, title string) string {
-	return fmt.Sprintf(`#EXTINF:-1 tvg-id="%s" group-title="%s",%s`, id, m3u(group), m3u(title))
+func extinf(id, group, title, logo string) string {
+	return fmt.Sprintf(`#EXTINF:-1 tvg-id="%s"%s group-title="%s",%s`, id, logoAttr(logo), m3u(group), m3u(title))
+}
+
+func logoAttr(logo string) string {
+	if logo == "" {
+		return ""
+	}
+	return fmt.Sprintf(` tvg-logo="%s"`, logo)
+}
+
+// eventLogo: un canal = un logo; local, o visitante si falta.
+func eventLogo(e Event) string {
+	return deref(e.HomeLogo, deref(e.AwayLogo, ""))
 }
 
 // playlist (Jellyfin): un canal por partido con URL proxy estable; resuelve al .m3u8 al sintonizar.
@@ -119,11 +131,11 @@ func playlist(w http.ResponseWriter, r *http.Request) {
 		league, id := deref(e.League, "Otros"), slug(e.Home+" vs "+e.Away)
 		title := fmt.Sprintf("%s vs %s (%s)", e.Home, e.Away, deref(e.Time, ""))
 		if !full {
-			lines = append(lines, extinf(id, league, title), streamLink(base, "/api/juanita/stream", optionURLs(e.Options)...))
+			lines = append(lines, extinf(id, league, title, eventLogo(e)), streamLink(base, "/api/juanita/stream", optionURLs(e.Options)...))
 			continue
 		}
 		for _, o := range e.Options {
-			lines = append(lines, extinf(id+"-"+slug(o.Source), league, title+" — "+o.Source), streamLink(base, "/api/juanita/stream", o.URL))
+			lines = append(lines, extinf(id+"-"+slug(o.Source), league, title+" — "+o.Source, eventLogo(e)), streamLink(base, "/api/juanita/stream", o.URL))
 		}
 	}
 	writeM3U(w, "juanita.m3u", lines)
@@ -140,7 +152,7 @@ func directPlaylist(w http.ResponseWriter, events []Event) {
 		for _, o := range e.Options {
 			u := resolved[o.URL]
 			title := fmt.Sprintf("%s vs %s (%s) — %s", e.Home, e.Away, deref(e.Time, ""), o.Source)
-			lines = append(lines, fmt.Sprintf(`#EXTINF:-1 group-title="%s",%s`, m3u(deref(e.League, "Otros")), m3u(title)), u)
+			lines = append(lines, fmt.Sprintf(`#EXTINF:-1%s group-title="%s",%s`, logoAttr(eventLogo(e)), m3u(deref(e.League, "Otros")), m3u(title)), u)
 		}
 	}
 	writeM3U(w, "juanita.m3u", lines)
@@ -150,11 +162,14 @@ func directPlaylist(w http.ResponseWriter, events []Event) {
 func epg(w http.ResponseWriter, r *http.Request) {
 	full := truthy(r.URL.Query().Get("full"))
 	out := []string{`<?xml version="1.0" encoding="UTF-8"?>`, "<tv>"}
-	add := func(id, name, start, stop string) {
-		name = html.EscapeString(name)
+	add := func(id, name, start, stop, logo string) {
+		name, icon := html.EscapeString(name), ""
+		if logo != "" {
+			icon = fmt.Sprintf(`<icon src="%s"/>`, html.EscapeString(logo))
+		}
 		out = append(out,
-			fmt.Sprintf(`  <channel id="%s"><display-name>%s</display-name></channel>`, id, name),
-			fmt.Sprintf(`  <programme start="%s" stop="%s" channel="%s"><title>%s</title></programme>`, start, stop, id, name))
+			fmt.Sprintf(`  <channel id="%s"><display-name>%s</display-name>%s</channel>`, id, name, icon),
+			fmt.Sprintf(`  <programme start="%s" stop="%s" channel="%s"><title>%s</title>%s</programme>`, start, stop, id, name, icon))
 	}
 	for _, e := range getJuanita() {
 		if len(e.Options) == 0 || e.Time == nil {
@@ -168,11 +183,11 @@ func epg(w http.ResponseWriter, r *http.Request) {
 		start, stop := t.Format(layout), t.Add(2*time.Hour).Format(layout)
 		id, name := slug(e.Home+" vs "+e.Away), e.Home+" vs "+e.Away
 		if !full {
-			add(id, name, start, stop)
+			add(id, name, start, stop, eventLogo(e))
 			continue
 		}
 		for _, o := range e.Options {
-			add(id+"-"+slug(o.Source), name+" — "+o.Source, start, stop)
+			add(id+"-"+slug(o.Source), name+" — "+o.Source, start, stop, eventLogo(e))
 		}
 	}
 	out = append(out, "</tv>")
@@ -187,11 +202,11 @@ func tvPlaylist(w http.ResponseWriter, r *http.Request) {
 	for _, c := range getChannels() {
 		id := slug(c.Name)
 		if !full {
-			lines = append(lines, extinf(id, c.Category, c.Name), streamLink(base, "/api/juanita/tv/stream", optionURLs(c.Options)...))
+			lines = append(lines, extinf(id, c.Category, c.Name, ""), streamLink(base, "/api/juanita/tv/stream", optionURLs(c.Options)...))
 			continue
 		}
 		for _, o := range c.Options {
-			lines = append(lines, extinf(id+"-"+slug(o.Source), c.Category, c.Name+" — "+o.Source), streamLink(base, "/api/juanita/tv/stream", o.URL))
+			lines = append(lines, extinf(id+"-"+slug(o.Source), c.Category, c.Name+" — "+o.Source, ""), streamLink(base, "/api/juanita/tv/stream", o.URL))
 		}
 	}
 	writeM3U(w, "juanita-tv.m3u", lines)
