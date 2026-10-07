@@ -74,7 +74,7 @@ func resolveMany(urls []string) map[string]string {
 
 // fetchAll baja en paralelo los targets únicos; los que fallan no aparecen en el mapa.
 func fetchAll(pending map[string]string) map[string]string {
-	headers := map[string]string{"User-Agent": userAgent, "Referer": "https://pelisjuanita.com/"}
+	headers := map[string]string{"Referer": "https://pelisjuanita.com/"}
 	bodies := map[string]string{}
 	var mu sync.Mutex
 	var wg sync.WaitGroup

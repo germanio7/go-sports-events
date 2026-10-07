@@ -42,7 +42,7 @@ func getSports() []map[string]string {
 				out = append(out, map[string]string{"id": id, "name": name})
 			}
 		}
-		return out, true
+		return out, len(out) > 0
 	})
 }
 
@@ -94,22 +94,19 @@ func getEvents(sport string, live, popular bool) []map[string]any {
 				"date": date, "category": m["category"], "sources": sources,
 			})
 		}
-		return out, true
+		return out, matches != nil
 	})
 }
 
 // getStream solo cachea resultados no vacíos: el próximo click reintenta upstream.
 func getStream(source, id string) []map[string]any {
-	key := "streamed:stream:" + source + ":" + id
-	if v, ok := cacheGet(key); ok {
-		return v.([]map[string]any)
-	}
-	streams := streamedJSON(streamedAPI + "/stream/" + url.PathEscape(source) + "/" + url.PathEscape(id))
-	if len(streams) == 0 {
-		return []map[string]any{}
-	}
-	cachePut(key, streams, time.Minute)
-	return streams
+	return cached("streamed:stream:"+source+":"+id, time.Minute, func() ([]map[string]any, bool) {
+		streams := streamedJSON(streamedAPI + "/stream/" + url.PathEscape(source) + "/" + url.PathEscape(id))
+		if streams == nil {
+			streams = []map[string]any{}
+		}
+		return streams, len(streams) > 0
+	})
 }
 
 // unix acepta ms o s (numérico o string) y fechas RFC3339.
