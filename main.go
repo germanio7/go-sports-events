@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -48,6 +49,22 @@ func main() {
 	mux.HandleFunc("GET /api/juanita/playlist.m3u", playlist)
 	mux.HandleFunc("GET /api/juanita/epg.xml", epg)
 	mux.HandleFunc("GET /api/juanita/tv/playlist.m3u", tvPlaylist)
+	// logos de la grilla 24/7: pelisjuanita los sirve tras Cloudflare, Jellyfin no llega directo.
+	mux.HandleFunc("GET /api/juanita/tv/logos/{file}", func(w http.ResponseWriter, r *http.Request) {
+		file := r.PathValue("file")
+		if !reLogoFile.MatchString(file) {
+			http.NotFound(w, r)
+			return
+		}
+		b, err := fetchOnce(&http.Client{Timeout: 10 * time.Second}, tvBase+"logos/"+file, nil)
+		if err != nil {
+			http.Error(w, "logo unavailable", http.StatusBadGateway)
+			return
+		}
+		w.Header().Set("Content-Type", http.DetectContentType(b))
+		w.Header().Set("Cache-Control", "public, max-age=604800")
+		w.Write(b)
+	})
 	mux.HandleFunc("GET /api/juanita/stream", stream)
 	mux.HandleFunc("GET /api/juanita/tv/stream", stream)
 
@@ -55,6 +72,8 @@ func main() {
 	log.Printf("listening on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, mux))
 }
+
+var reLogoFile = regexp.MustCompile(`^[a-z0-9-]+\.png$`)
 
 func todayAR() string { return time.Now().In(ar).Format("2006-01-02") }
 
@@ -200,13 +219,13 @@ func tvPlaylist(w http.ResponseWriter, r *http.Request) {
 	full, base := truthy(r.URL.Query().Get("full")), baseURL(r)
 	lines := []string{"#EXTM3U"}
 	for _, c := range getChannels() {
-		id := slug(c.Name)
+		id, logo := slug(c.Name), base+"/api/juanita/tv/logos/"+c.Slug+".png"
 		if !full {
-			lines = append(lines, extinf(id, c.Category, c.Name, ""), streamLink(base, "/api/juanita/tv/stream", optionURLs(c.Options)...))
+			lines = append(lines, extinf(id, c.Category, c.Name, logo), streamLink(base, "/api/juanita/tv/stream", optionURLs(c.Options)...))
 			continue
 		}
 		for _, o := range c.Options {
-			lines = append(lines, extinf(id+"-"+slug(o.Source), c.Category, c.Name+" — "+o.Source, ""), streamLink(base, "/api/juanita/tv/stream", o.URL))
+			lines = append(lines, extinf(id+"-"+slug(o.Source), c.Category, c.Name+" — "+o.Source, logo), streamLink(base, "/api/juanita/tv/stream", o.URL))
 		}
 	}
 	writeM3U(w, "juanita-tv.m3u", lines)

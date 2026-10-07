@@ -18,7 +18,7 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
-const userAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+const userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36" // Chrome viejo → 403 en pelisjuanita /tv/logos
 
 // Argentina y Bogotá no tienen DST: zonas fijas, sin depender de tzdata en la imagen.
 var (
