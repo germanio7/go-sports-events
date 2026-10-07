@@ -27,6 +27,17 @@ func main() {
 		}
 		writeJSON(w, getStream(source, id))
 	})
+	// posters de streamed (/api/images/proxy/...) vía este server, que sí resuelve streamed.pk.
+	mux.HandleFunc("GET /api/images/", func(w http.ResponseWriter, r *http.Request) {
+		b, err := fetchOnce(&http.Client{Timeout: 10 * time.Second}, streamedImg+r.URL.Path, nil)
+		if err != nil {
+			http.Error(w, "image unavailable", http.StatusBadGateway)
+			return
+		}
+		w.Header().Set("Content-Type", http.DetectContentType(b))
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		w.Write(b)
+	})
 	mux.HandleFunc("GET /api/sports", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, getSports()) })
 	mux.HandleFunc("GET /api/pelota/agenda", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"source": "futbollibrehd.me/api/agenda", "events": getPelota()})

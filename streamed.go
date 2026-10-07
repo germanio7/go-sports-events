@@ -79,7 +79,8 @@ func getEvents(sport string, live, popular bool) []map[string]any {
 		for _, m := range matches {
 			image := "/notfound.jpg"
 			if m["poster"] != nil {
-				image = streamedImg + str(m["poster"])
+				// relativa: el navegador la pide a /api/images (proxy abajo), no a streamed.pk que el DNS del ISP no resuelve.
+				image = str(m["poster"])
 			}
 			sources := m["sources"]
 			if sources == nil {
