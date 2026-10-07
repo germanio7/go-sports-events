@@ -48,6 +48,21 @@ func main() {
 		}
 		writeJSON(w, map[string]any{"sport": sport, "league": league, "scores": getScores(sport, league)})
 	})
+	mux.HandleFunc("GET /api/scores/{id}", func(w http.ResponseWriter, r *http.Request) {
+		q, id := r.URL.Query(), r.PathValue("id")
+		if q.Get("sport") == "" || q.Get("league") == "" || !reDigits.MatchString(id) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			writeJSON(w, map[string]string{"message": "sport, league and numeric id are required"})
+			return
+		}
+		d, ok := getDetail(q.Get("sport"), q.Get("league"), id)
+		if !ok {
+			http.Error(w, "detail unavailable", http.StatusBadGateway)
+			return
+		}
+		writeJSON(w, d)
+	})
 	mux.HandleFunc("GET /api/pelota/agenda", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"source": "futbollibrehd.me/api/agenda", "events": getPelota()})
 	})
@@ -80,6 +95,8 @@ func main() {
 	log.Printf("listening on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, mux))
 }
+
+var reDigits = regexp.MustCompile(`^[0-9]+$`)
 
 var reLogoFile = regexp.MustCompile(`^[a-z0-9-]+\.png$`)
 

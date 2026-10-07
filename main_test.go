@@ -117,8 +117,33 @@ func TestParseESPN(t *testing.T) {
 		{"order":3,"athlete":{"displayName":"C"}},{"order":1,"winner":true,"athlete":{"displayName":"A","flag":{"href":"https://x/ned.png"}}},
 		{"order":4,"athlete":{"displayName":"D"}},{"order":2,"athlete":{"displayName":"B"}}]}]}]}`
 	s, _ = parseESPN([]byte(f1), "f1")
-	if len(s) != 1 || s[0].Session != "Race" || s[0].Tournament != "Bahrain GP" || len(s[0].Podium) != 3 ||
-		s[0].Podium[0] != (Side{Name: "A", Winner: true, Logo: "https://x/ned.png"}) || s[0].Podium[2].Name != "C" {
+	if len(s) != 1 || s[0].Session != "Race" || s[0].Tournament != "Bahrain GP" || len(s[0].Results) != 4 ||
+		s[0].Results[0] != (Side{Name: "A", Winner: true, Logo: "https://x/ned.png"}) || s[0].Results[2].Name != "C" {
 		t.Fatalf("f1: %+v", s)
+	}
+}
+
+func TestParseSummary(t *testing.T) {
+	body := `{"gameInfo":{"venue":{"fullName":"Guillermo Laza","address":{"city":"Buenos Aires"}}},
+		"header":{"competitions":[{"competitors":[
+			{"homeAway":"home","team":{"id":"1"},"linescores":[{"displayValue":"31"},{"displayValue":"21"}]},
+			{"homeAway":"away","team":{"id":"2"},"linescores":[{"displayValue":"33"},{"displayValue":"23"}]}]}]},
+		"boxscore":{"teams":[
+			{"team":{"id":"2"},"statistics":[{"name":"possessionPct","displayValue":"40.8"},{"name":"turnovers","displayValue":"1"},{"name":"turnovers","displayValue":"9"}]},
+			{"team":{"id":"1"},"statistics":[{"name":"possessionPct","displayValue":"59.2"},{"name":"turnovers","displayValue":"0"},{"name":"passPct","displayValue":"0.8"}]}]},
+		"keyEvents":[
+			{"type":{"type":"kickoff"},"clock":{"displayValue":"0'"}},
+			{"type":{"type":"goal---free-kick"},"clock":{"displayValue":"3'"},"team":{"id":"1"},"participants":[{"athlete":{"displayName":"Milton Céliz"}}]},
+			{"type":{"type":"yellow-card"},"clock":{"displayValue":"5'"},"team":{"id":"2"},"participants":[{"athlete":{"displayName":"Sansotre"}}]},
+			{"type":{"type":"own-goal"},"clock":{"displayValue":"70'"},"team":{"id":"2"},"participants":[{"athlete":{"displayName":"Pérez"}}]}],
+		"scoringPlays":[{"text":"TD run","clock":{"displayValue":"13:34"},"period":{"number":1},"team":{"id":"2"}}]}`
+	d, err := parseSummary([]byte(body))
+	want := Detail{
+		Venue: "Guillermo Laza · Buenos Aires", HomePeriods: []string{"31", "21"}, AwayPeriods: []string{"33", "23"},
+		Plays: []Play{{"3'", "home", "goal", "Milton Céliz"}, {"5'", "away", "yellow", "Sansotre"}, {"70'", "away", "goal", "Pérez (e/c)"}, {"Q1 13:34", "away", "score", "TD run"}},
+		Stats: []Stat{{"Posesión %", "59.2", "40.8"}, {"Pérdidas", "0", "1"}},
+	}
+	if err != nil || !reflect.DeepEqual(d, want) {
+		t.Fatalf("got %+v %v", d, err)
 	}
 }
