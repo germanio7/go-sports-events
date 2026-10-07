@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"log"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -20,6 +21,9 @@ type Event struct {
 	Channel *string  `json:"channel"`
 	Quality *string  `json:"quality"`
 	Options []Option `json:"options"`
+	// solo juanita: logos de Promiedos por id de equipo
+	HomeLogo *string `json:"homeLogo,omitempty"`
+	AwayLogo *string `json:"awayLogo,omitempty"`
 }
 
 type Option struct {
@@ -165,7 +169,9 @@ func pelotaStreamURL(href string) (string, bool) {
 	return u, reHTTP.MatchString(u)
 }
 
-func isTag(n *html.Node, tag string) bool { return n != nil && n.Type == html.ElementNode && n.Data == tag }
+func isTag(n *html.Node, tag string) bool {
+	return n != nil && n.Type == html.ElementNode && n.Data == tag
+}
 
 func children(n *html.Node, tag string) []*html.Node {
 	var out []*html.Node
@@ -223,6 +229,8 @@ type juanitaItem struct {
 		Desc    string `json:"diary_description"`
 		Hour    string `json:"diary_hour"`
 		Date    string `json:"date_diary"`
+		HomeID  string `json:"idEquipo1"`
+		AwayID  string `json:"idEquipo2"`
 		Country struct {
 			Data struct {
 				Attributes struct {
@@ -306,5 +314,15 @@ func parseJuanitaItem(it juanitaItem) (Event, bool) {
 		options = append(options, Option{Source: src, Quality: optionQuality(name), URL: u, Embed: embed})
 	}
 
-	return Event{League: league, Home: home, Away: away, Time: t, Date: date, Options: options}, true
+	return Event{League: league, Home: home, Away: away, Time: t, Date: date, Options: options,
+		HomeLogo: promiedosLogo(a.HomeID), AwayLogo: promiedosLogo(a.AwayID)}, true
+}
+
+// promiedosLogo: idEquipo de juanita = id de equipo de Promiedos (PNG público, CORS *).
+func promiedosLogo(id string) *string {
+	if id == "" {
+		return nil
+	}
+	u := "https://api.promiedos.com.ar/images/team/" + url.PathEscape(id) + "/1"
+	return &u
 }

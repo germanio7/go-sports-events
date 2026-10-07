@@ -66,4 +66,11 @@ func TestParseJuanitaRelativeEmbed(t *testing.T) {
 	if o.URL != "https://pelisjuanita.com/tv/embed/eventos.html?r=aHR0cHM6Ly90dmY5MC5jb20vMS5waHA/c3RyZWFtPWJlaW5zcG9ydGVz" || o.Embed != "https://tvf90.com/1.php?stream=beinsportes" {
 		t.Fatalf("bad option: %+v", o)
 	}
+	if e.HomeLogo != nil {
+		t.Fatalf("logo without id: %v", *e.HomeLogo)
+	}
+	it.Attributes.HomeID = "bcbj"
+	if e, _ = parseJuanitaItem(it); e.HomeLogo == nil || *e.HomeLogo != "https://api.promiedos.com.ar/images/team/bcbj/1" || e.AwayLogo != nil {
+		t.Fatalf("bad logos: %v %v", e.HomeLogo, e.AwayLogo)
+	}
 }
