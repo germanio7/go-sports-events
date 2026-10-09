@@ -16,6 +16,7 @@ func main() {
 	initDB()
 	every(mustDuration(env("SYNC_EVERY", "2m")), syncEvents)
 	every(time.Hour, pruneEvents)
+	every(5*time.Minute, warmChannels)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/events", func(w http.ResponseWriter, r *http.Request) {
@@ -206,33 +207,43 @@ func directPlaylist(w http.ResponseWriter, events []Event) {
 	writeM3U(w, "juanita.m3u", lines)
 }
 
-// epg: XMLTV mínimo, 2h fijas por partido; ids = tvg-id de la playlist.
+// epg: XMLTV mínimo, 2h fijas por partido + "Previa" desde la hora actual; ids = tvg-id de la playlist.
+// category Sports → Jellyfin lo lista en Deportes.
 func epg(w http.ResponseWriter, r *http.Request) {
 	full := truthy(r.URL.Query().Get("full"))
 	out := []string{`<?xml version="1.0" encoding="UTF-8"?>`, "<tv>"}
-	add := func(id, name, start, stop, logo string) {
-		name, icon := html.EscapeString(name), ""
+	const layout = "20060102150405 -0700"
+	now := time.Now().Truncate(time.Hour).In(ar)
+	add := func(id, name, desc string, t time.Time, logo string) {
+		name, desc, icon := html.EscapeString(name), html.EscapeString(desc), ""
 		if logo != "" {
 			icon = fmt.Sprintf(`<icon src="%s"/>`, html.EscapeString(logo))
 		}
-		out = append(out,
-			fmt.Sprintf(`  <channel id="%s"><display-name>%s</display-name>%s</channel>`, id, name, icon),
-			fmt.Sprintf(`  <programme start="%s" stop="%s" channel="%s"><title>%s</title>%s</programme>`, start, stop, id, name, icon))
+		out = append(out, fmt.Sprintf(`  <channel id="%s"><display-name>%s</display-name>%s</channel>`, id, name, icon))
+		if now.Before(t) {
+			out = append(out, fmt.Sprintf(`  <programme start="%s" stop="%s" channel="%s"><title>Previa: %s</title><desc>%s</desc>%s</programme>`,
+				now.Format(layout), t.Format(layout), id, name, desc, icon))
+		}
+		out = append(out, fmt.Sprintf(`  <programme start="%s" stop="%s" channel="%s"><title>%s</title><desc>%s</desc><category lang="en">Sports</category>%s</programme>`,
+			t.Format(layout), t.Add(2*time.Hour).Format(layout), id, name, desc, icon))
 	}
 	for _, e := range getJuanita() {
 		t := startsAt(e)
 		if len(e.Options) == 0 || t == nil {
 			continue
 		}
-		const layout = "20060102150405 -0700"
-		start, stop := t.Format(layout), t.Add(2*time.Hour).Format(layout)
 		id, name := slug(e.Home+" vs "+e.Away), e.Home+" vs "+e.Away
+		sources := make([]string, len(e.Options))
+		for i, o := range e.Options {
+			sources[i] = o.Source
+		}
+		desc := deref(e.League, "Otros") + " · " + strings.Join(sources, ", ")
 		if !full {
-			add(id, name, start, stop, eventLogo(e))
+			add(id, name, desc, *t, eventLogo(e))
 			continue
 		}
 		for _, o := range e.Options {
-			add(id+"-"+slug(o.Source), name+" — "+o.Source, start, stop, eventLogo(e))
+			add(id+"-"+slug(o.Source), name+" — "+o.Source, desc, *t, eventLogo(e))
 		}
 	}
 	out = append(out, "</tv>")

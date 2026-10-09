@@ -108,7 +108,8 @@ func saveEvents(provider string, events []Event) {
 			return err
 		}
 		for _, e := range events {
-			if len(e.Options) == 0 && e.Raw == nil {
+			// upstream sigue listando partidos terminados: sin esto el prune los borra y el sync los revive.
+			if t := startsAt(e); (len(e.Options) == 0 && e.Raw == nil) || (t != nil && t.Before(time.Now().Add(-pruneAfter))) {
 				continue
 			}
 			var id int64
@@ -139,6 +140,14 @@ RETURNING id`, provider, deref(e.Date, todayAR()), startsAt(e), e.League, e.Home
 		return
 	}
 	log.Printf("sync %s: %d events", provider, len(events))
+}
+
+// warmChannels: precalienta la grilla 24/7 canal por canal (no 715 requests de golpe); solo re-resuelve lo vencido.
+// ponytail: ~715 opciones, las fallidas se reintentan cada 5m; filtrar canales muertos si upstream se queja.
+func warmChannels() {
+	for _, c := range getChannels() {
+		resolveMany(optionURLs(c.Options))
+	}
 }
 
 var pruneAfter = mustDuration(env("PRUNE_AFTER", "4h"))
