@@ -28,6 +28,7 @@ Todos `GET`.
 | `/api/juanita/playlist.m3u` | M3U para Jellyfin, un canal por partido | `full=1` una entrada por opción; `resolve=1` `.m3u8` directos (los tokens expiran) |
 | `/api/juanita/epg.xml` | XMLTV, 2h fijas por partido | `full=1` |
 | `/api/juanita/tv/playlist.m3u` | M3U de canales 24/7 | `full=1` |
+| `/api/tvgarden/playlist.m3u` | M3U de canales abiertos de Argentina (tvgarden/iptv-org), `.m3u8` directos | — |
 | `/api/juanita/stream` | 302 al primer `.m3u8` vivo | `u=` repetido o `u[0]=` (400 si falta, 502 si ninguno vive) |
 | `/api/juanita/tv/stream` | Igual que `/api/juanita/stream` | Igual |
 

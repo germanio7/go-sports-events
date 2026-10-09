@@ -1,11 +1,16 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Grilla 24/7 de pelisjuanita.com/tv como JSON estático: el HTML vive tras Cloudflare. Sin Adultos.
@@ -62,3 +67,60 @@ var getChannels = sync.OnceValue(func() []Channel {
 	}
 	return out
 })
+
+// ---- tvgarden (canales abiertos de Argentina, datos de iptv-org) ----
+
+var gardenURL = env("TVGARDEN_URL", "https://tvgarden.world/api/tv/countries/ar.json")
+
+// getGarden: .m3u8 directos (sin resolver), sin solo-YouTube ni los que ya están en la grilla 24/7.
+func getGarden() []Channel {
+	return cached("garden", 6*time.Hour, func() ([]Channel, bool) {
+		body, err := fetch(gardenURL, 2, time.Second, 20*time.Second, nil)
+		var out []Channel
+		if err == nil {
+			out, err = parseGarden(body, getChannels())
+		}
+		if err != nil {
+			log.Printf("tvgarden fetch failed: %v", err)
+			return []Channel{}, false
+		}
+		return out, true
+	})
+}
+
+func parseGarden(body []byte, existing []Channel) ([]Channel, error) {
+	// sirven el .json gzipeado sin Content-Encoding: el cliente HTTP no lo descomprime solo.
+	if bytes.HasPrefix(body, []byte{0x1f, 0x8b}) {
+		r, err := gzip.NewReader(bytes.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		if body, err = io.ReadAll(r); err != nil {
+			return nil, err
+		}
+	}
+	var raw []struct {
+		Name       string
+		StreamURLs []string `json:"stream_urls"`
+	}
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return nil, err
+	}
+	have := map[string]bool{}
+	for _, c := range existing {
+		have[slug(c.Name)] = true
+	}
+	out := []Channel{}
+	for _, c := range raw {
+		name := strings.TrimSpace(c.Name)
+		if name == "" || len(c.StreamURLs) == 0 || have[slug(name)] {
+			continue
+		}
+		var opts []Option
+		for i, u := range c.StreamURLs {
+			opts = append(opts, Option{Source: fmt.Sprintf("S%d", i+1), URL: u})
+		}
+		out = append(out, Channel{name, slug(name), "Argentina", "ar", opts})
+	}
+	return out, nil
+}

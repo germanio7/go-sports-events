@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
@@ -223,5 +225,18 @@ func TestLatamFirst(t *testing.T) {
 	want := []string{"ESPN 2", "Disney+", "espn2 | API2", "TNT Sports", "ESPN Deportes", "daznlaliga | API2", "Fox Sports 2 USA | OP2", "ESPN NL", "foxone3 | API2", "BeIN Sports Ñ", "Universo | HD", "espnplus1 | API2"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("latamFirst:\n got %v\nwant %v", got, want)
+	}
+}
+
+func TestParseGarden(t *testing.T) {
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	zw.Write([]byte(`[{"name":"Canal 7 Salta","stream_urls":["https://x/a.m3u8","https://x/b.m3u8"]},
+		{"name":"Solo YouTube","stream_urls":[],"youtube_urls":["https://youtu.be/x"]},
+		{"name":"TyC Sports","stream_urls":["https://x/tyc.m3u8"]}]`))
+	zw.Close()
+	got, err := parseGarden(buf.Bytes(), []Channel{{Name: "TyC Sports"}})
+	if err != nil || len(got) != 1 || got[0].Name != "Canal 7 Salta" || len(got[0].Options) != 2 || got[0].Options[0].URL != "https://x/a.m3u8" {
+		t.Fatalf("parseGarden: %+v %v", got, err)
 	}
 }
