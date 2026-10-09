@@ -1,9 +1,9 @@
 package main
 
 import (
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
-	"encoding/base64"
 	"reflect"
 	"testing"
 )
@@ -196,5 +196,17 @@ func TestAlive(t *testing.T) {
 	}
 	if alive(srv.URL+"/html.m3u8") || alive(srv.URL+"/gone.m3u8") {
 		t.Error("html/404 should be dead")
+	}
+}
+
+func TestWatchedURLs(t *testing.T) {
+	h := "21:00"
+	events := []Event{{Home: "A", Away: "B", Time: &h, Options: []Option{{Source: "ESPN", URL: "u1"}, {Source: "TyC", URL: "u2"}}},
+		{Home: "C", Away: "D", Time: &h, Options: []Option{{Source: "S1", URL: "u3"}}}}
+	if got := watchedURLs(events, map[string]bool{"A vs B (21:00)": true}); !reflect.DeepEqual(got, []string{"u1", "u2"}) {
+		t.Errorf("sin full: %v", got)
+	}
+	if got := watchedURLs(events, map[string]bool{"A vs B (21:00) — TyC": true}); !reflect.DeepEqual(got, []string{"u2"}) {
+		t.Errorf("full=1: %v", got)
 	}
 }

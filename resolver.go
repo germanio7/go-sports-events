@@ -150,6 +150,11 @@ func checkStreams() {
 		urls = append(urls, optionURLs(e.Options)...)
 	}
 	resolveMany(urls)
+	validate(urls)
+}
+
+// validate: GET a cada .m3u8 cacheado de urls; los muertos quedan como fallo (1m).
+func validate(urls []string) {
 	var wg sync.WaitGroup
 	for _, u := range urls {
 		key := "resolve:" + unwrap(u)

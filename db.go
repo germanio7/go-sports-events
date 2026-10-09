@@ -2,13 +2,8 @@ package main
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
-	"fmt"
 	"log"
-	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -149,53 +144,6 @@ RETURNING id, xmax = 0`, provider, deref(e.Date, todayAR()), startsAt(e), e.Leag
 	return added
 }
 
-var (
-	jellyfinURL = strings.TrimRight(env("JELLYFIN_URL", ""), "/")
-	jellyfinKey = env("JELLYFIN_API_KEY", "")
-)
-
-// refreshGuide: corre "Actualizar la guía" de Jellyfin para que un partido nuevo aparezca ya, sin esperar
-// la tarea programada. No-op sin JELLYFIN_URL/JELLYFIN_API_KEY.
-func refreshGuide() {
-	if jellyfinURL == "" || jellyfinKey == "" {
-		return
-	}
-	auth := `MediaBrowser Token="` + jellyfinKey + `"`
-	body, err := fetch(jellyfinURL+"/ScheduledTasks?isHidden=false", 1, 0, 10*time.Second, map[string]string{"Authorization": auth})
-	var tasks []struct {
-		ID  string `json:"Id"`
-		Key string
-	}
-	if err == nil {
-		err = json.Unmarshal(body, &tasks)
-	}
-	id := ""
-	for _, t := range tasks {
-		if t.Key == "RefreshGuide" {
-			id = t.ID
-		}
-	}
-	if err == nil && id == "" {
-		err = errors.New("tarea RefreshGuide no encontrada")
-	}
-	if err == nil {
-		req, _ := http.NewRequest(http.MethodPost, jellyfinURL+"/ScheduledTasks/Running/"+id, nil)
-		req.Header.Set("Authorization", auth)
-		var res *http.Response
-		if res, err = (&http.Client{Timeout: 10 * time.Second}).Do(req); err == nil {
-			res.Body.Close()
-			if res.StatusCode > 299 {
-				err = fmt.Errorf("POST RefreshGuide: %s", res.Status)
-			}
-		}
-	}
-	if err != nil {
-		log.Printf("jellyfin: %v", err)
-		return
-	}
-	log.Printf("jellyfin: actualizando guía")
-}
-
 // warmChannels: precalienta la grilla 24/7 canal por canal (no 715 requests de golpe); solo re-resuelve lo vencido.
 // ponytail: ~715 opciones, las fallidas se reintentan cada 5m; filtrar canales muertos si upstream se queja.
 func warmChannels() {
@@ -208,12 +156,17 @@ var pruneAfter = mustDuration(env("PRUNE_AFTER", "4h"))
 
 // pruneEvents: borra eventos que empezaron hace más de PRUNE_AFTER; sin hora, los que upstream dejó de listar.
 func pruneEvents() {
-	tag, err := db.Exec(context.Background(), `DELETE FROM events WHERE coalesce(starts_at, last_seen) < $1`, time.Now().Add(-pruneAfter))
+	var total, juanita int
+	err := db.QueryRow(context.Background(), `WITH d AS (DELETE FROM events WHERE coalesce(starts_at, last_seen) < $1 RETURNING provider)
+SELECT count(*), count(*) FILTER (WHERE provider = 'juanita') FROM d`, time.Now().Add(-pruneAfter)).Scan(&total, &juanita)
 	if err != nil {
 		log.Printf("prune: %v", err)
 		return
 	}
-	log.Printf("prune: %d events", tag.RowsAffected())
+	log.Printf("prune: %d events", total)
+	if juanita > 0 { // saca los partidos terminados de la guía de Jellyfin ya
+		refreshGuide()
+	}
 }
 
 func loadEvents(provider string) []Event {

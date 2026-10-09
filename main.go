@@ -16,9 +16,11 @@ import (
 func main() {
 	initDB()
 	every(mustDuration(env("SYNC_EVERY", "2m")), syncEvents)
-	every(time.Hour, pruneEvents)
+	every(10*time.Minute, pruneEvents)
 	every(5*time.Minute, warmChannels)
 	every(time.Minute, checkStreams)
+	every(15*time.Second, checkWatched)
+	time.AfterFunc(10*time.Second, checkTuners) // con el server ya escuchando: puede apuntar a sí mismo
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/events", func(w http.ResponseWriter, r *http.Request) {
@@ -102,7 +104,11 @@ func main() {
 	log.Printf("listening on %s", addr)
 	// ReadHeaderTimeout: el puerto está expuesto, corta clientes que no terminan los headers (slowloris).
 	// Sin WriteTimeout: /stream puede tardar en resolver.
-	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Instance", instanceID)
+		mux.ServeHTTP(w, r)
+	})
+	srv := &http.Server{Addr: addr, Handler: handler, ReadHeaderTimeout: 10 * time.Second}
 	log.Fatal(srv.ListenAndServe())
 }
 
@@ -173,6 +179,11 @@ func logoAttr(logo string) string {
 	return fmt.Sprintf(` tvg-logo="%s"`, logo)
 }
 
+// matchTitle: nombre del canal del partido en la playlist (Jellyfin lo reporta así en /Sessions).
+func matchTitle(e Event) string {
+	return fmt.Sprintf("%s vs %s (%s)", e.Home, e.Away, deref(e.Time, ""))
+}
+
 // eventLogo: un canal = un logo; local, o visitante si falta.
 func eventLogo(e Event) string {
 	return deref(e.HomeLogo, deref(e.AwayLogo, ""))
@@ -193,7 +204,7 @@ func playlist(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		league, id := deref(e.League, "Otros"), slug(e.Home+" vs "+e.Away)
-		title := fmt.Sprintf("%s vs %s (%s)", e.Home, e.Away, deref(e.Time, ""))
+		title := matchTitle(e)
 		if !full {
 			ch++
 			lines = append(lines, extinf(id, ch, league, title, eventLogo(e)), streamLink(base, "/api/juanita/stream", optionURLs(e.Options)...))
