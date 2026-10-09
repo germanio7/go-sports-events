@@ -6,8 +6,32 @@ services:
     dns: [1.1.1.1, 8.8.8.8]
     ports:
       - "83:8080"
+    depends_on:
+      db:
+        condition: service_healthy
     environment:
       STREAMED_API_BASE: ${STREAMED_API_BASE:-https://streamed.pk/api}
       STREAMED_IMG_BASE: ${STREAMED_IMG_BASE:-https://streamed.pk}
       PELOTALIBRE_AGENDA_URL: ${PELOTALIBRE_AGENDA_URL:-https://pelotalibre.la/agenda.php}
       PELISJUANITA_AGENDA_URL: ${PELISJUANITA_AGENDA_URL:-https://pelisjuanita.com/tv/api-agenda.php}
+      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@db:5432/postgres}
+      SYNC_EVERY: ${SYNC_EVERY:-2m}
+      PRUNE_AFTER: ${PRUNE_AFTER:-4h}
+
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: postgres
+    # solo localhost (TablePlus); no expuesto a la red
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      retries: 10
+
+volumes:
+  pgdata:

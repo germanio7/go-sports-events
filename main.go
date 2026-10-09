@@ -13,6 +13,10 @@ import (
 )
 
 func main() {
+	initDB()
+	every(mustDuration(env("SYNC_EVERY", "2m")), syncEvents)
+	every(time.Hour, pruneEvents)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/events", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
@@ -216,11 +220,8 @@ func epg(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf(`  <programme start="%s" stop="%s" channel="%s"><title>%s</title>%s</programme>`, start, stop, id, name, icon))
 	}
 	for _, e := range getJuanita() {
-		if len(e.Options) == 0 || e.Time == nil {
-			continue
-		}
-		t, err := time.ParseInLocation("2006-01-02 15:04", deref(e.Date, todayAR())+" "+*e.Time, ar)
-		if err != nil {
+		t := startsAt(e)
+		if len(e.Options) == 0 || t == nil {
 			continue
 		}
 		const layout = "20060102150405 -0700"

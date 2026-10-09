@@ -24,6 +24,10 @@ type Event struct {
 	// solo juanita: logos de Promiedos por id de equipo
 	HomeLogo *string `json:"homeLogo,omitempty"`
 	AwayLogo *string `json:"awayLogo,omitempty"`
+	// solo streamed, para /api/events desde la BD
+	Raw     map[string]any `json:"-"`
+	Live    bool           `json:"-"`
+	Popular bool           `json:"-"`
 }
 
 type Option struct {
@@ -75,15 +79,16 @@ func toAR(hhmm string, from *time.Location) *string {
 
 var pelotaURL = env("PELOTALIBRE_AGENDA_URL", "https://pelotalibre.la/agenda.php")
 
-func getPelota() []Event {
-	return cached("pelota:agenda", time.Minute, func() ([]Event, bool) {
-		body, err := fetch(pelotaURL, 2, 800*time.Millisecond, 15*time.Second, nil)
-		if err != nil {
-			log.Printf("pelota agenda fetch failed: %v", err)
-			return []Event{}, false
-		}
-		return parsePelota(string(body)), true
-	})
+func getPelota() []Event { return loadEvents("pelota") }
+
+// fetchPelota: upstream directo, solo lo llama el sync.
+func fetchPelota() []Event {
+	body, err := fetch(pelotaURL, 2, 800*time.Millisecond, 15*time.Second, nil)
+	if err != nil {
+		log.Printf("pelota agenda fetch failed: %v", err)
+		return []Event{}
+	}
+	return parsePelota(string(body))
 }
 
 // parsePelota: cada evento es `<li><a>Liga: A vs B<span class="t">HH:MM</span></a><ul><li><a href="/eventos.html?r=B64">…`.
@@ -249,28 +254,29 @@ type juanitaItem struct {
 	} `json:"attributes"`
 }
 
-func getJuanita() []Event {
-	return cached("juanita:agenda", time.Minute, func() ([]Event, bool) {
-		if juanitaURL == "" {
-			return []Event{}, false
+func getJuanita() []Event { return loadEvents("juanita") }
+
+// fetchJuanita: upstream directo, solo lo llama el sync.
+func fetchJuanita() []Event {
+	if juanitaURL == "" {
+		return []Event{}
+	}
+	body, err := fetch(juanitaURL, 2, 800*time.Millisecond, 15*time.Second, nil)
+	var payload struct{ Data []juanitaItem }
+	if err == nil {
+		err = json.Unmarshal(body, &payload)
+	}
+	if err != nil {
+		log.Printf("juanita agenda fetch failed: %v", err)
+		return []Event{}
+	}
+	events := []Event{}
+	for _, it := range payload.Data {
+		if e, ok := parseJuanitaItem(it); ok {
+			events = append(events, e)
 		}
-		body, err := fetch(juanitaURL, 2, 800*time.Millisecond, 15*time.Second, nil)
-		var payload struct{ Data []juanitaItem }
-		if err == nil {
-			err = json.Unmarshal(body, &payload)
-		}
-		if err != nil {
-			log.Printf("juanita agenda fetch failed: %v", err)
-			return []Event{}, false
-		}
-		events := []Event{}
-		for _, it := range payload.Data {
-			if e, ok := parseJuanitaItem(it); ok {
-				events = append(events, e)
-			}
-		}
-		return events, true
-	})
+	}
+	return events
 }
 
 func parseJuanitaItem(it juanitaItem) (Event, bool) {

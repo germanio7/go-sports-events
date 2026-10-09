@@ -4,6 +4,15 @@
 docker compose up --build   # http://localhost:83
 ```
 
+## Base de datos
+
+Postgres (servicio `db` en compose, `DATABASE_URL` obligatoria). El server corre dos jobs:
+
+- sync cada `SYNC_EVERY` (2m): guarda los eventos de pelota, juanita y streamed con sus opciones (`events` 1─< `options`); en streamed también `live`/`popular`.
+- prune cada 1h: borra eventos que empezaron hace más de `PRUNE_AFTER` (4h).
+
+Agenda, playlist, epg y `/api/events` salen de la BD. `/api/stream`, `/api/sports` y scores siguen yendo a upstream (con caché en memoria).
+
 ## Endpoints
 
 Todos `GET`.

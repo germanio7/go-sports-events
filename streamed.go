@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -46,57 +47,59 @@ func getSports() []map[string]string {
 	})
 }
 
-// getEvents: live+popular no filtra por categoría (el pool upstream es chico); live solo sí.
+// getEvents lee de la BD (la llena syncEvents). live+popular no filtra por categoría (el pool upstream es chico); live solo sí.
 func getEvents(sport string, live, popular bool) []map[string]any {
 	if sport == "" {
 		sport = "football"
 	}
-	seg, key := "", sport
-	if popular {
-		seg = "popular"
+	out := []map[string]any{}
+	rows, err := db.Query(context.Background(), `SELECT raw FROM events WHERE provider = 'streamed' AND raw IS NOT NULL
+	AND (NOT $1 OR live) AND (NOT $2 OR popular) AND (($1 AND $2) OR raw->>'category' = $3)
+ORDER BY starts_at NULLS LAST, id`, live, popular, sport)
+	if err != nil {
+		log.Printf("load streamed: %v", err)
+		return out
 	}
-	if live {
-		key = "live"
+	defer rows.Close()
+	for rows.Next() {
+		var m map[string]any
+		if err := rows.Scan(&m); err != nil {
+			log.Printf("load streamed: %v", err)
+			return out
+		}
+		out = append(out, m)
 	}
-	return cached("streamed:events:"+key+":"+seg, time.Minute, func() ([]map[string]any, bool) {
-		u := streamedAPI + "/matches/" + url.PathEscape(sport) + "/" + seg
-		if live {
-			u = streamedAPI + "/matches/live/" + seg
-		}
-		matches := streamedJSON(u)
-		if live && !popular {
-			kept := matches[:0]
-			for _, m := range matches {
-				if str(m["category"]) == sport {
-					kept = append(kept, m)
-				}
-			}
-			matches = kept
-		}
-		sort.SliceStable(matches, func(i, j int) bool { return unixOrMax(matches[i]["date"]) < unixOrMax(matches[j]["date"]) })
+	return out
+}
 
-		out := make([]map[string]any, 0, len(matches))
-		for _, m := range matches {
-			image := "/notfound.jpg"
-			if m["poster"] != nil {
-				// relativa: el navegador la pide a /api/images (proxy abajo), no a streamed.pk que el DNS del ISP no resuelve.
-				image = str(m["poster"])
-			}
-			sources := m["sources"]
-			if sources == nil {
-				sources = []any{}
-			}
-			var date any
-			if ts, ok := unix(m["date"]); ok {
-				date = time.Unix(ts, 0).In(ar).Format("2006-01-02T15:04:05-07:00")
-			}
-			out = append(out, map[string]any{
-				"id": m["id"], "name": m["title"], "image": image,
-				"date": date, "category": m["category"], "sources": sources,
-			})
+// fetchMatches: upstream directo (solo el sync), ordenado por fecha y con la forma de /api/events; nil si falla.
+func fetchMatches(path string) []map[string]any {
+	matches := streamedJSON(streamedAPI + path)
+	if matches == nil {
+		return nil
+	}
+	sort.SliceStable(matches, func(i, j int) bool { return unixOrMax(matches[i]["date"]) < unixOrMax(matches[j]["date"]) })
+	out := make([]map[string]any, 0, len(matches))
+	for _, m := range matches {
+		image := "/notfound.jpg"
+		if m["poster"] != nil {
+			// relativa: el navegador la pide a /api/images (proxy abajo), no a streamed.pk que el DNS del ISP no resuelve.
+			image = str(m["poster"])
 		}
-		return out, matches != nil
-	})
+		sources := m["sources"]
+		if sources == nil {
+			sources = []any{}
+		}
+		var date any
+		if ts, ok := unix(m["date"]); ok {
+			date = time.Unix(ts, 0).In(ar).Format("2006-01-02T15:04:05-07:00")
+		}
+		out = append(out, map[string]any{
+			"id": m["id"], "name": m["title"], "image": image,
+			"date": date, "category": m["category"], "sources": sources,
+		})
+	}
+	return out
 }
 
 // getStream solo cachea resultados no vacíos: el próximo click reintenta upstream.

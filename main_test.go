@@ -147,3 +147,32 @@ func TestParseSummary(t *testing.T) {
 		t.Fatalf("got %+v %v", d, err)
 	}
 }
+
+func TestStreamedEvents(t *testing.T) {
+	got := streamedEvents([]map[string]any{{"name": "C vs D", "category": "football", "date": "2026-10-09T18:30:00-03:00",
+		"id": "m1", "sources": []any{map[string]any{"source": "alpha", "id": "c-d"}, map[string]any{"source": "", "id": "x"}}}},
+		map[string]bool{"m1": true}, nil)
+	e := got[0]
+	if !e.Live || e.Popular || str(e.Raw["category"]) != "football" {
+		t.Fatalf("bad flags/raw: %+v", e)
+	}
+	if e.Home != "C" || e.Away != "D" || deref(e.League, "") != "football" || deref(e.Date, "") != "2026-10-09" || deref(e.Time, "") != "18:30" {
+		t.Fatalf("bad event: %+v", e)
+	}
+	if len(e.Options) != 1 || e.Options[0].URL != streamedAPI+"/stream/alpha/c-d" {
+		t.Fatalf("bad options: %+v", e.Options)
+	}
+}
+
+func TestStartsAt(t *testing.T) {
+	d, h := "2026-10-09", "21:00"
+	if got := startsAt(Event{Date: &d, Time: &h}); got == nil || got.UTC().Format("2006-01-02 15:04") != "2026-10-10 00:00" {
+		t.Errorf("with date: %v", got)
+	}
+	if got := startsAt(Event{Time: &h}); got == nil || got.In(ar).Format("2006-01-02") != todayAR() {
+		t.Errorf("without date: %v", got)
+	}
+	if startsAt(Event{Date: &d}) != nil {
+		t.Error("without time should be nil")
+	}
+}
