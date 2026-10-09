@@ -1,6 +1,8 @@
 package main
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"encoding/base64"
 	"reflect"
 	"testing"
@@ -174,5 +176,25 @@ func TestStartsAt(t *testing.T) {
 	}
 	if startsAt(Event{Date: &d}) != nil {
 		t.Error("without time should be nil")
+	}
+}
+
+func TestAlive(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/ok.m3u8":
+			w.Write([]byte("#EXTM3U\n#EXT-X-VERSION:3\n"))
+		case "/html.m3u8":
+			w.Write([]byte("<html>expired</html>"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	if !alive(srv.URL + "/ok.m3u8") {
+		t.Error("ok should be alive")
+	}
+	if alive(srv.URL+"/html.m3u8") || alive(srv.URL+"/gone.m3u8") {
+		t.Error("html/404 should be dead")
 	}
 }

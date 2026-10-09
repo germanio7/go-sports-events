@@ -64,14 +64,7 @@ func every(d time.Duration, job func()) {
 
 func syncEvents() {
 	saveEvents("pelota", fetchPelota())
-	juanita := fetchJuanita()
-	saveEvents("juanita", juanita)
-	// precalienta el cache de resolución: Jellyfin sintoniza en ms en vez de ~1s; solo re-resuelve lo vencido.
-	var urls []string
-	for _, e := range juanita {
-		urls = append(urls, optionURLs(e.Options)...)
-	}
-	resolveMany(urls)
+	saveEvents("juanita", fetchJuanita())
 	syncStreamed()
 }
 

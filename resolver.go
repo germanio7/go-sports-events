@@ -12,7 +12,7 @@ import (
 
 // Sigue iframes hasta el player final y extrae el .m3u8 con regex.
 // Sin resolvers por host: si un host cambia ofuscación, la opción cae al embed original.
-// Los tokens duran ~5h → cache de 30m (margen ante streams caídos); fallos 5m.
+// Los tokens duran ~5h → cache de 30m; fallos 1m. checkStreams saca los .m3u8 que mueren antes.
 
 var (
 	reIframe = regexp.MustCompile(`(?i)<iframe[^>]+src=["']([^"']+)["']`)
@@ -66,7 +66,7 @@ func resolveMany(urls []string) map[string]string {
 
 	// fallos también, más corto: una opción muerta no frena cada sintonización del partido.
 	for orig, final := range results {
-		ttl := 5 * time.Minute
+		ttl := time.Minute
 		if strings.Contains(final, ".m3u8") {
 			ttl = 30 * time.Minute
 		}
@@ -138,4 +138,38 @@ func absolute(src, base string) string {
 		b.Scheme = "https"
 	}
 	return b.ResolveReference(r).String()
+}
+
+// checkStreams (cada 1m): re-resuelve lo vencido de juanita y después valida cada .m3u8 cacheado;
+// los muertos quedan como fallo (1m) → /stream salta a la próxima opción. Hay orígenes que sirven
+// un .m3u8 muerto, por eso se valida después de resolver y no antes.
+// ponytail: un GET por opción viva por minuto (~100); solo juanita, la grilla 24/7 sigue en 30m.
+func checkStreams() {
+	var urls []string
+	for _, e := range getJuanita() {
+		urls = append(urls, optionURLs(e.Options)...)
+	}
+	resolveMany(urls)
+	var wg sync.WaitGroup
+	for _, u := range urls {
+		key := "resolve:" + unwrap(u)
+		v, ok := cacheGet(key)
+		if !ok || !strings.Contains(v.(string), ".m3u8") {
+			continue
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if !alive(v.(string)) {
+				cachePut(key, "dead", time.Minute)
+			}
+		}()
+	}
+	wg.Wait()
+}
+
+// alive: el .m3u8 responde 2xx y es una playlist HLS.
+func alive(m3u8 string) bool {
+	b, err := fetchOnce(&http.Client{Timeout: 5 * time.Second}, m3u8, nil)
+	return err == nil && strings.HasPrefix(strings.TrimSpace(string(b)), "#EXTM3U")
 }

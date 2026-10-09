@@ -58,6 +58,12 @@ func cacheGet(key string) (any, bool) {
 	return e.v, true
 }
 
+func cacheDel(key string) {
+	mem.Lock()
+	delete(mem.m, key)
+	mem.Unlock()
+}
+
 func cachePut(key string, v any, ttl time.Duration) {
 	mem.Lock()
 	mem.m[key] = entry{v, time.Now().Add(ttl)}

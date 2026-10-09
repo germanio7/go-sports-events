@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 )
@@ -17,6 +18,7 @@ func main() {
 	every(mustDuration(env("SYNC_EVERY", "2m")), syncEvents)
 	every(time.Hour, pruneEvents)
 	every(5*time.Minute, warmChannels)
+	every(time.Minute, checkStreams)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/events", func(w http.ResponseWriter, r *http.Request) {
@@ -35,8 +37,8 @@ func main() {
 	})
 	// posters de streamed (/api/images/proxy/...) vía este server, que sí resuelve streamed.pk.
 	mux.HandleFunc("GET /api/images/", func(w http.ResponseWriter, r *http.Request) {
-		b, err := fetchOnce(&http.Client{Timeout: 10 * time.Second}, streamedImg+r.URL.Path, nil)
-		if err != nil {
+		b := cachedBytes("img:"+r.URL.Path, 24*time.Hour, streamedImg+r.URL.Path)
+		if b == nil {
 			http.Error(w, "image unavailable", http.StatusBadGateway)
 			return
 		}
@@ -69,7 +71,7 @@ func main() {
 		writeJSON(w, d)
 	})
 	mux.HandleFunc("GET /api/pelota/agenda", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, map[string]any{"source": "futbollibrehd.me/api/agenda", "events": getPelota()})
+		writeJSON(w, map[string]any{"source": "pelotalibre.la/agenda.php", "events": getPelota()})
 	})
 	mux.HandleFunc("GET /api/juanita/agenda", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"source": "pelisjuanita.com/tv/api-agenda.php", "events": getJuanita()})
@@ -84,8 +86,8 @@ func main() {
 			http.NotFound(w, r)
 			return
 		}
-		b, err := fetchOnce(&http.Client{Timeout: 10 * time.Second}, tvBase+"logos/"+file, nil)
-		if err != nil {
+		b := cachedBytes("logo:"+file, 7*24*time.Hour, tvBase+"logos/"+file)
+		if b == nil {
 			http.Error(w, "logo unavailable", http.StatusBadGateway)
 			return
 		}
@@ -98,7 +100,19 @@ func main() {
 
 	addr := ":" + env("PORT", "8080")
 	log.Printf("listening on %s", addr)
-	log.Fatal(http.ListenAndServe(addr, mux))
+	// ReadHeaderTimeout: el puerto está expuesto, corta clientes que no terminan los headers (slowloris).
+	// Sin WriteTimeout: /stream puede tardar en resolver.
+	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+	log.Fatal(srv.ListenAndServe())
+}
+
+// cachedBytes: imágenes de upstream cacheadas en memoria (solo éxitos); nil si falla.
+// ponytail: sin límite de tamaño, ~13MB/día de posters; LRU si la memoria molesta.
+func cachedBytes(key string, ttl time.Duration, u string) []byte {
+	return cached(key, ttl, func() ([]byte, bool) {
+		b, err := fetchOnce(&http.Client{Timeout: 10 * time.Second}, u, nil)
+		return b, err == nil
+	})
 }
 
 var reDigits = regexp.MustCompile(`^[0-9]+$`)
@@ -285,6 +299,13 @@ func stream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resolved := resolveMany(embeds)
+	if !slices.ContainsFunc(embeds, func(u string) bool { return strings.Contains(resolved[u], ".m3u8") }) {
+		// todo falló en caché: el partido pudo arrancar recién → reintenta upstream ya en vez de 502.
+		for _, u := range embeds {
+			cacheDel("resolve:" + unwrap(u))
+		}
+		resolved = resolveMany(embeds)
+	}
 	for _, u := range embeds {
 		if t := resolved[u]; strings.Contains(t, ".m3u8") {
 			http.Redirect(w, r, t, http.StatusFound)
