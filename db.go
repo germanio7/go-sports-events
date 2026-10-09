@@ -2,8 +2,13 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"log"
+	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -64,7 +69,9 @@ func every(d time.Duration, job func()) {
 
 func syncEvents() {
 	saveEvents("pelota", fetchPelota())
-	saveEvents("juanita", fetchJuanita())
+	if saveEvents("juanita", fetchJuanita()) > 0 {
+		refreshGuide()
+	}
 	syncStreamed()
 }
 
@@ -93,7 +100,9 @@ func syncStreamed() {
 
 // saveEvents: upsert del evento + reemplazo de sus opciones (conserva el orden upstream, tira links muertos).
 // ponytail: pelota no trae fecha → day = hoy AR; un sync pasada la medianoche duplica sus eventos hasta el prune.
-func saveEvents(provider string, events []Event) {
+// Devuelve cuántos eventos son nuevos (no estaban en la BD).
+func saveEvents(provider string, events []Event) int {
+	added := 0
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	err := pgx.BeginFunc(ctx, db, func(tx pgx.Tx) error {
@@ -106,15 +115,19 @@ func saveEvents(provider string, events []Event) {
 				continue
 			}
 			var id int64
+			var inserted bool
 			err := tx.QueryRow(ctx, `INSERT INTO events (provider, day, starts_at, league, home, away, home_logo, away_logo, raw, live, popular)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 ON CONFLICT (provider, day, home, away) DO UPDATE SET starts_at = EXCLUDED.starts_at, league = EXCLUDED.league,
 	home_logo = EXCLUDED.home_logo, away_logo = EXCLUDED.away_logo, raw = EXCLUDED.raw,
 	live = EXCLUDED.live, popular = EXCLUDED.popular, last_seen = now()
-RETURNING id`, provider, deref(e.Date, todayAR()), startsAt(e), e.League, e.Home, e.Away, e.HomeLogo, e.AwayLogo,
-				e.Raw, e.Live, e.Popular).Scan(&id)
+RETURNING id, xmax = 0`, provider, deref(e.Date, todayAR()), startsAt(e), e.League, e.Home, e.Away, e.HomeLogo, e.AwayLogo,
+				e.Raw, e.Live, e.Popular).Scan(&id, &inserted)
 			if err != nil {
 				return err
+			}
+			if inserted {
+				added++
 			}
 			if _, err := tx.Exec(ctx, `DELETE FROM options WHERE event_id = $1`, id); err != nil {
 				return err
@@ -130,9 +143,57 @@ RETURNING id`, provider, deref(e.Date, todayAR()), startsAt(e), e.League, e.Home
 	})
 	if err != nil {
 		log.Printf("sync %s: %v", provider, err)
+		return 0
+	}
+	log.Printf("sync %s: %d events, %d nuevos", provider, len(events), added)
+	return added
+}
+
+var (
+	jellyfinURL = strings.TrimRight(env("JELLYFIN_URL", ""), "/")
+	jellyfinKey = env("JELLYFIN_API_KEY", "")
+)
+
+// refreshGuide: corre "Actualizar la guía" de Jellyfin para que un partido nuevo aparezca ya, sin esperar
+// la tarea programada. No-op sin JELLYFIN_URL/JELLYFIN_API_KEY.
+func refreshGuide() {
+	if jellyfinURL == "" || jellyfinKey == "" {
 		return
 	}
-	log.Printf("sync %s: %d events", provider, len(events))
+	auth := `MediaBrowser Token="` + jellyfinKey + `"`
+	body, err := fetch(jellyfinURL+"/ScheduledTasks?isHidden=false", 1, 0, 10*time.Second, map[string]string{"Authorization": auth})
+	var tasks []struct {
+		ID  string `json:"Id"`
+		Key string
+	}
+	if err == nil {
+		err = json.Unmarshal(body, &tasks)
+	}
+	id := ""
+	for _, t := range tasks {
+		if t.Key == "RefreshGuide" {
+			id = t.ID
+		}
+	}
+	if err == nil && id == "" {
+		err = errors.New("tarea RefreshGuide no encontrada")
+	}
+	if err == nil {
+		req, _ := http.NewRequest(http.MethodPost, jellyfinURL+"/ScheduledTasks/Running/"+id, nil)
+		req.Header.Set("Authorization", auth)
+		var res *http.Response
+		if res, err = (&http.Client{Timeout: 10 * time.Second}).Do(req); err == nil {
+			res.Body.Close()
+			if res.StatusCode > 299 {
+				err = fmt.Errorf("POST RefreshGuide: %s", res.Status)
+			}
+		}
+	}
+	if err != nil {
+		log.Printf("jellyfin: %v", err)
+		return
+	}
+	log.Printf("jellyfin: actualizando guía")
 }
 
 // warmChannels: precalienta la grilla 24/7 canal por canal (no 715 requests de golpe); solo re-resuelve lo vencido.

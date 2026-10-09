@@ -17,6 +17,9 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@db:5432/postgres}
       SYNC_EVERY: ${SYNC_EVERY:-2m}
       PRUNE_AFTER: ${PRUNE_AFTER:-4h}
+      # opcionales (.env): avisa a Jellyfin cuando aparece un partido nuevo
+      JELLYFIN_URL: ${JELLYFIN_URL:-}
+      JELLYFIN_API_KEY: ${JELLYFIN_API_KEY:-}
 
   db:
     image: postgres:17-alpine
