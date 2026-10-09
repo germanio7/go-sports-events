@@ -12,7 +12,7 @@ import (
 
 // Sigue iframes hasta el player final y extrae el .m3u8 con regex.
 // Sin resolvers por host: si un host cambia ofuscación, la opción cae al embed original.
-// Los tokens expiran → cache corto, y solo de éxitos.
+// Los tokens duran ~5h → cache de 30m (margen ante streams caídos); fallos 5m.
 
 var (
 	reIframe = regexp.MustCompile(`(?i)<iframe[^>]+src=["']([^"']+)["']`)
@@ -64,10 +64,13 @@ func resolveMany(urls []string) map[string]string {
 		pending = next
 	}
 
+	// fallos también, más corto: una opción muerta no frena cada sintonización del partido.
 	for orig, final := range results {
+		ttl := 5 * time.Minute
 		if strings.Contains(final, ".m3u8") {
-			cachePut("resolve:"+targets[orig], final, 2*time.Minute)
+			ttl = 30 * time.Minute
 		}
+		cachePut("resolve:"+targets[orig], final, ttl)
 	}
 	return results
 }
