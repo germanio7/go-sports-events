@@ -79,10 +79,10 @@ func TestParseJuanitaRelativeEmbed(t *testing.T) {
 
 func TestExtinfLogo(t *testing.T) {
 	logo := "https://x/l.png"
-	if got := extinf("a", "G", "T", eventLogo(Event{AwayLogo: &logo})); got != `#EXTINF:-1 tvg-id="a" tvg-logo="https://x/l.png" group-title="G",T` {
+	if got := extinf("a", 7, "G", "T", eventLogo(Event{AwayLogo: &logo})); got != `#EXTINF:-1 tvg-id="a" tvg-chno="7" tvg-logo="https://x/l.png" group-title="G",T` {
 		t.Fatal(got)
 	}
-	if got := extinf("a", "G", "T", ""); got != `#EXTINF:-1 tvg-id="a" group-title="G",T` {
+	if got := extinf("a", 7, "G", "T", ""); got != `#EXTINF:-1 tvg-id="a" tvg-chno="7" group-title="G",T` {
 		t.Fatal(got)
 	}
 }

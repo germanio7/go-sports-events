@@ -161,8 +161,9 @@ func optionURLs(opts []Option) []string {
 	return out
 }
 
-func extinf(id, group, title, logo string) string {
-	return fmt.Sprintf(`#EXTINF:-1 tvg-id="%s"%s group-title="%s",%s`, id, logoAttr(logo), m3u(group), m3u(title))
+// extinf: tvg-chno ordena la lista de Canales de Jellyfin (24/7 desde 1, partidos desde 1000 → al final).
+func extinf(id string, chno int, group, title, logo string) string {
+	return fmt.Sprintf(`#EXTINF:-1 tvg-id="%s" tvg-chno="%d"%s group-title="%s",%s`, id, chno, logoAttr(logo), m3u(group), m3u(title))
 }
 
 func logoAttr(logo string) string {
@@ -185,7 +186,7 @@ func playlist(w http.ResponseWriter, r *http.Request) {
 		directPlaylist(w, events)
 		return
 	}
-	full, base := truthy(r.URL.Query().Get("full")), baseURL(r)
+	full, base, ch := truthy(r.URL.Query().Get("full")), baseURL(r), 999
 	lines := []string{"#EXTM3U"}
 	for _, e := range events {
 		if len(e.Options) == 0 {
@@ -194,11 +195,13 @@ func playlist(w http.ResponseWriter, r *http.Request) {
 		league, id := deref(e.League, "Otros"), slug(e.Home+" vs "+e.Away)
 		title := fmt.Sprintf("%s vs %s (%s)", e.Home, e.Away, deref(e.Time, ""))
 		if !full {
-			lines = append(lines, extinf(id, league, title, eventLogo(e)), streamLink(base, "/api/juanita/stream", optionURLs(e.Options)...))
+			ch++
+			lines = append(lines, extinf(id, ch, league, title, eventLogo(e)), streamLink(base, "/api/juanita/stream", optionURLs(e.Options)...))
 			continue
 		}
 		for _, o := range e.Options {
-			lines = append(lines, extinf(id+"-"+slug(o.Source), league, title+" — "+o.Source, eventLogo(e)), streamLink(base, "/api/juanita/stream", o.URL))
+			ch++
+			lines = append(lines, extinf(id+"-"+slug(o.Source), ch, league, title+" — "+o.Source, eventLogo(e)), streamLink(base, "/api/juanita/stream", o.URL))
 		}
 	}
 	writeM3U(w, "juanita.m3u", lines)
@@ -267,16 +270,18 @@ func epg(w http.ResponseWriter, r *http.Request) {
 
 // tvPlaylist: grilla 24/7 (sin EPG), mismo patrón que playlist.
 func tvPlaylist(w http.ResponseWriter, r *http.Request) {
-	full, base := truthy(r.URL.Query().Get("full")), baseURL(r)
+	full, base, ch := truthy(r.URL.Query().Get("full")), baseURL(r), 0
 	lines := []string{"#EXTM3U"}
 	for _, c := range getChannels() {
 		id, logo := slug(c.Name), base+"/api/juanita/tv/logos/"+c.Slug+".png"
 		if !full {
-			lines = append(lines, extinf(id, c.Category, c.Name, logo), streamLink(base, "/api/juanita/tv/stream", optionURLs(c.Options)...))
+			ch++
+			lines = append(lines, extinf(id, ch, c.Category, c.Name, logo), streamLink(base, "/api/juanita/tv/stream", optionURLs(c.Options)...))
 			continue
 		}
 		for _, o := range c.Options {
-			lines = append(lines, extinf(id+"-"+slug(o.Source), c.Category, c.Name+" — "+o.Source, logo), streamLink(base, "/api/juanita/tv/stream", o.URL))
+			ch++
+			lines = append(lines, extinf(id+"-"+slug(o.Source), ch, c.Category, c.Name+" — "+o.Source, logo), streamLink(base, "/api/juanita/tv/stream", o.URL))
 		}
 	}
 	writeM3U(w, "juanita-tv.m3u", lines)
