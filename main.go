@@ -97,7 +97,8 @@ func main() {
 		w.Header().Set("Cache-Control", "public, max-age=604800")
 		w.Write(b)
 	})
-	mux.HandleFunc("GET /api/tvgarden/playlist.m3u", gardenPlaylist)
+	mux.HandleFunc("GET /api/tvgarden/playlist.m3u", gardenPlaylist("tv", 500, "tvgarden.m3u"))
+	mux.HandleFunc("GET /api/tvgarden/radio.m3u", gardenPlaylist("radio", 2000, "tvgarden-radio.m3u"))
 	mux.HandleFunc("GET /api/juanita/stream", stream)
 	mux.HandleFunc("GET /api/juanita/tv/stream", stream)
 
@@ -316,14 +317,20 @@ func tvPlaylist(w http.ResponseWriter, r *http.Request) {
 	writeM3U(w, "juanita-tv.m3u", lines)
 }
 
-// gardenPlaylist: canales abiertos de tvgarden con su .m3u8 directo (públicos, sin token: no pasan por /stream).
-// Numerados desde 500: entre la grilla 24/7 (1…) y los partidos (1000…).
-func gardenPlaylist(w http.ResponseWriter, r *http.Request) {
-	lines := []string{"#EXTM3U"}
-	for i, c := range getGarden() {
-		lines = append(lines, extinf(c.Slug, 500+i, c.Category, c.Name, ""), c.Options[0].URL)
+// gardenPlaylist: canales/radios abiertos de tvgarden con su stream directo (públicos, sin token: no pasan por /stream).
+// tv desde 500 (entre la grilla 24/7 y los partidos), radio desde 2000 (al final) y con radio="true" para Jellyfin.
+func gardenPlaylist(kind string, chno int, filename string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		lines := []string{"#EXTM3U"}
+		for i, c := range getGarden(kind) {
+			inf := extinf(c.Slug, chno+i, c.Category, c.Name, "")
+			if kind == "radio" {
+				inf = strings.Replace(extinf(c.Slug, chno+i, "Radio", c.Name, ""), "#EXTINF:-1 ", `#EXTINF:-1 radio="true" `, 1)
+			}
+			lines = append(lines, inf, c.Options[0].URL)
+		}
+		writeM3U(w, filename, lines)
 	}
-	writeM3U(w, "tvgarden.m3u", lines)
 }
 
 // stream: 302 al primer .m3u8 vivo, en el orden de upstream (la primera suele ser HD).

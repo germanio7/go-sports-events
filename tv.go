@@ -68,20 +68,25 @@ var getChannels = sync.OnceValue(func() []Channel {
 	return out
 })
 
-// ---- tvgarden (canales abiertos de Argentina, datos de iptv-org) ----
+// ---- tvgarden (canales y radios abiertos de Argentina, datos de iptv-org) ----
 
-var gardenURL = env("TVGARDEN_URL", "https://tvgarden.world/api/tv/countries/ar.json")
+var gardenAPI = strings.TrimRight(env("TVGARDEN_API_BASE", "https://tvgarden.world/api"), "/")
 
-// getGarden: .m3u8 directos (sin resolver), sin solo-YouTube ni los que ya están en la grilla 24/7.
-func getGarden() []Channel {
-	return cached("garden", 6*time.Hour, func() ([]Channel, bool) {
-		body, err := fetch(gardenURL, 2, time.Second, 20*time.Second, nil)
+// getGarden: kind "tv" (.m3u8) o "radio" (mp3/aac); streams directos, sin solo-YouTube.
+// En tv saltea los que ya están en la grilla 24/7.
+func getGarden(kind string) []Channel {
+	return cached("garden:"+kind, 6*time.Hour, func() ([]Channel, bool) {
+		body, err := fetch(gardenAPI+"/"+kind+"/countries/ar.json", 2, time.Second, 20*time.Second, nil)
 		var out []Channel
 		if err == nil {
-			out, err = parseGarden(body, getChannels())
+			var existing []Channel
+			if kind == "tv" {
+				existing = getChannels()
+			}
+			out, err = parseGarden(body, existing)
 		}
 		if err != nil {
-			log.Printf("tvgarden fetch failed: %v", err)
+			log.Printf("tvgarden %s fetch failed: %v", kind, err)
 			return []Channel{}, false
 		}
 		return out, true
