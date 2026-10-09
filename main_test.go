@@ -210,3 +210,18 @@ func TestWatchedURLs(t *testing.T) {
 		t.Errorf("full=1: %v", got)
 	}
 }
+
+func TestLatamFirst(t *testing.T) {
+	var opts []Option
+	for _, s := range []string{"ESPN Deportes", "ESPN 2", "daznlaliga | API2", "Fox Sports 2 USA | OP2", "ESPN NL", "Disney+", "espn2 | API2", "foxone3 | API2", "BeIN Sports Ñ", "Universo | HD", "espnplus1 | API2", "TNT Sports"} {
+		opts = append(opts, Option{Source: s})
+	}
+	var got []string
+	for _, o := range latamFirst(opts) {
+		got = append(got, o.Source)
+	}
+	want := []string{"ESPN 2", "Disney+", "espn2 | API2", "TNT Sports", "ESPN Deportes", "daznlaliga | API2", "Fox Sports 2 USA | OP2", "ESPN NL", "foxone3 | API2", "BeIN Sports Ñ", "Universo | HD", "espnplus1 | API2"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("latamFirst:\n got %v\nwant %v", got, want)
+	}
+}

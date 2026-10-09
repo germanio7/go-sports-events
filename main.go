@@ -159,6 +159,23 @@ func streamLink(base, path string, urls ...string) string {
 	return base + path + "?" + url.Values{"u": urls}.Encode()
 }
 
+// reForeign: señales de afuera de Latinoamérica (EE.UU., España, Países Bajos). latamFirst las manda al final
+// para que /stream pruebe primero el relato latinoamericano y estas queden de fallback.
+// ponytail: heurística por nombre de señal; sumar acá las que aparezcan.
+var reForeign = regexp.MustCompile(`(?i)usa|\bnl\b|deportes|universo|bein|dazn|foxone|espnplus`)
+
+func latamFirst(opts []Option) []Option {
+	foreign := func(o Option) int {
+		if reForeign.MatchString(o.Source) {
+			return 1
+		}
+		return 0
+	}
+	out := slices.Clone(opts)
+	slices.SortStableFunc(out, func(a, b Option) int { return foreign(a) - foreign(b) })
+	return out
+}
+
 func optionURLs(opts []Option) []string {
 	out := make([]string, len(opts))
 	for i, o := range opts {
@@ -207,7 +224,7 @@ func playlist(w http.ResponseWriter, r *http.Request) {
 		title := matchTitle(e)
 		if !full {
 			ch++
-			lines = append(lines, extinf(id, ch, league, title, eventLogo(e)), streamLink(base, "/api/juanita/stream", optionURLs(e.Options)...))
+			lines = append(lines, extinf(id, ch, league, title, eventLogo(e)), streamLink(base, "/api/juanita/stream", optionURLs(latamFirst(e.Options))...))
 			continue
 		}
 		for _, o := range e.Options {
