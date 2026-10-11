@@ -18,6 +18,7 @@ func main() {
 	every(mustDuration(env("SYNC_EVERY", "2m")), syncEvents)
 	every(10*time.Minute, pruneEvents)
 	every(5*time.Minute, warmChannels)
+	every(15*time.Minute, checkGarden)
 	every(time.Minute, checkStreams)
 	every(15*time.Second, checkWatched)
 	time.AfterFunc(10*time.Second, checkTuners) // con el server ya escuchando: puede apuntar a sí mismo
@@ -302,7 +303,10 @@ func epg(w http.ResponseWriter, r *http.Request) {
 func tvPlaylist(w http.ResponseWriter, r *http.Request) {
 	full, base, ch := truthy(r.URL.Query().Get("full")), baseURL(r), 0
 	lines := []string{"#EXTM3U"}
-	for _, c := range getChannels() {
+	for _, c := range tvChannels() {
+		if down("247:" + slug(c.Name)) { // sin ninguna opción viva en los últimos 2 chequeos
+			continue
+		}
 		id, logo := slug(c.Name), base+"/api/juanita/tv/logos/"+c.Slug+".png"
 		if !full {
 			ch++
@@ -318,11 +322,15 @@ func tvPlaylist(w http.ResponseWriter, r *http.Request) {
 }
 
 // gardenPlaylist: canales/radios abiertos de tvgarden con su stream directo (públicos, sin token: no pasan por /stream).
+// Oculta los caídos en los últimos 2 chequeos (checkGarden).
 // tv desde 500 (entre la grilla 24/7 y los partidos), radio desde 2000 (al final) y con radio="true" para Jellyfin.
 func gardenPlaylist(kind string, chno int, filename string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		lines := []string{"#EXTM3U"}
-		for i, c := range getGarden(kind) {
+		for i, c := range gardenOnly(kind) {
+			if down("garden-" + kind + ":" + c.Slug) {
+				continue
+			}
 			inf := extinf(c.Slug, chno+i, c.Category, c.Name, "")
 			if kind == "radio" {
 				inf = strings.Replace(extinf(c.Slug, chno+i, "Radio", c.Name, ""), "#EXTINF:-1 ", `#EXTINF:-1 radio="true" `, 1)

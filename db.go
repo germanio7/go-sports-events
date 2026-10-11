@@ -4,6 +4,8 @@ import (
 	"context"
 	"log"
 	"net/url"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -144,11 +146,18 @@ RETURNING id, xmax = 0`, provider, deref(e.Date, todayAR()), startsAt(e), e.Leag
 	return added
 }
 
-// warmChannels: precalienta la grilla 24/7 canal por canal (no 715 requests de golpe); solo re-resuelve lo vencido.
-// ponytail: ~715 opciones, las fallidas se reintentan cada 5m; filtrar canales muertos si upstream se queja.
+// warmChannels: precalienta y valida la grilla 24/7 canal por canal (no 715 requests de golpe); solo re-resuelve
+// lo vencido. Anota si el canal tiene alguna opción viva: los caídos se ocultan de la playlist.
+// ponytail: ~715 opciones, las fallidas se reintentan cada 5m.
 func warmChannels() {
-	for _, c := range getChannels() {
-		resolveMany(optionURLs(c.Options))
+	for _, c := range tvChannels() {
+		urls := optionURLs(c.Options)
+		resolveMany(urls)
+		validate(urls)
+		report("247:"+slug(c.Name), slices.ContainsFunc(urls, func(u string) bool {
+			v, ok := cacheGet("resolve:" + unwrap(u))
+			return ok && strings.Contains(v.(string), ".m3u8")
+		}))
 	}
 }
 

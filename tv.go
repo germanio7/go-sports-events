@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -73,17 +74,12 @@ var getChannels = sync.OnceValue(func() []Channel {
 var gardenAPI = strings.TrimRight(env("TVGARDEN_API_BASE", "https://tvgarden.world/api"), "/")
 
 // getGarden: kind "tv" (.m3u8) o "radio" (mp3/aac); streams directos, sin solo-YouTube.
-// En tv saltea los que ya están en la grilla 24/7.
 func getGarden(kind string) []Channel {
 	return cached("garden:"+kind, 6*time.Hour, func() ([]Channel, bool) {
 		body, err := fetch(gardenAPI+"/"+kind+"/countries/ar.json", 2, time.Second, 20*time.Second, nil)
 		var out []Channel
 		if err == nil {
-			var existing []Channel
-			if kind == "tv" {
-				existing = getChannels()
-			}
-			out, err = parseGarden(body, existing)
+			out, err = parseGarden(body)
 		}
 		if err != nil {
 			log.Printf("tvgarden %s fetch failed: %v", kind, err)
@@ -93,7 +89,7 @@ func getGarden(kind string) []Channel {
 	})
 }
 
-func parseGarden(body []byte, existing []Channel) ([]Channel, error) {
+func parseGarden(body []byte) ([]Channel, error) {
 	// sirven el .json gzipeado sin Content-Encoding: el cliente HTTP no lo descomprime solo.
 	if bytes.HasPrefix(body, []byte{0x1f, 0x8b}) {
 		r, err := gzip.NewReader(bytes.NewReader(body))
@@ -111,14 +107,10 @@ func parseGarden(body []byte, existing []Channel) ([]Channel, error) {
 	if err := json.Unmarshal(body, &raw); err != nil {
 		return nil, err
 	}
-	have := map[string]bool{}
-	for _, c := range existing {
-		have[slug(c.Name)] = true
-	}
 	out := []Channel{}
 	for _, c := range raw {
 		name := strings.TrimSpace(c.Name)
-		if name == "" || len(c.StreamURLs) == 0 || have[slug(name)] {
+		if name == "" || len(c.StreamURLs) == 0 {
 			continue
 		}
 		var opts []Option
@@ -128,4 +120,40 @@ func parseGarden(body []byte, existing []Channel) ([]Channel, error) {
 		out = append(out, Channel{name, slug(name), "Argentina", "ar", opts})
 	}
 	return out, nil
+}
+
+// tvChannels: grilla 24/7 + el .m3u8 de tvgarden como opción extra si el canal está en las dos
+// (rescata canales que juanita sirve con players JS que el resolver no puede abrir).
+func tvChannels() []Channel { return withGarden(getChannels(), getGarden("tv")) }
+
+func withGarden(chs, garden []Channel) []Channel {
+	extra := map[string][]Option{}
+	for _, g := range garden {
+		extra[g.Slug] = append(extra[g.Slug], g.Options...)
+	}
+	out := make([]Channel, len(chs))
+	for i, c := range chs {
+		c.Options = slices.Concat(c.Options, extra[slug(c.Name)])
+		out[i] = c
+	}
+	return out
+}
+
+// gardenOnly: canales/radios de tvgarden que no están en la grilla 24/7 (esos ya van como opción extra ahí).
+func gardenOnly(kind string) []Channel {
+	chs := getGarden(kind)
+	if kind != "tv" {
+		return chs
+	}
+	have := map[string]bool{}
+	for _, c := range getChannels() {
+		have[slug(c.Name)] = true
+	}
+	out := []Channel{}
+	for _, c := range chs {
+		if !have[c.Slug] {
+			out = append(out, c)
+		}
+	}
+	return out
 }

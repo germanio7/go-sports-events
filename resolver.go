@@ -178,3 +178,61 @@ func alive(m3u8 string) bool {
 	b, err := fetchOnce(&http.Client{Timeout: 5 * time.Second}, m3u8, nil)
 	return err == nil && strings.HasPrefix(strings.TrimSpace(string(b)), "#EXTM3U")
 }
+
+// health: fallos seguidos por canal. down = falló en los últimos 2 chequeos (una caída corta no lo saca
+// de Jellyfin, que al quitarlo pierde el favorito). Sin chequear todavía = visible.
+var health = struct {
+	sync.Mutex
+	fails map[string]int
+}{fails: map[string]int{}}
+
+func report(key string, ok bool) {
+	health.Lock()
+	defer health.Unlock()
+	if ok {
+		delete(health.fails, key)
+	} else {
+		health.fails[key]++
+	}
+}
+
+func down(key string) bool {
+	health.Lock()
+	defer health.Unlock()
+	return health.fails[key] >= 2
+}
+
+// checkGarden (cada 15m): chequea los streams directos de tvgarden (tv y radio), 20 a la vez.
+func checkGarden() {
+	for _, kind := range []string{"tv", "radio"} {
+		sem, wg := make(chan struct{}, 20), sync.WaitGroup{}
+		for _, c := range gardenOnly(kind) {
+			wg.Add(1)
+			sem <- struct{}{}
+			go func() {
+				defer func() { <-sem; wg.Done() }()
+				report("garden-"+kind+":"+c.Slug, reachable(c.Options[0].URL, kind == "radio"))
+			}()
+		}
+		wg.Wait()
+	}
+}
+
+// reachable: tv = playlist HLS viva; radio = responde 2xx con audio (no una página HTML). En radio no
+// lee el cuerpo: es un stream infinito.
+func reachable(u string, radio bool) bool {
+	if !radio {
+		return alive(u)
+	}
+	req, err := http.NewRequest(http.MethodGet, u, nil)
+	if err != nil {
+		return false
+	}
+	req.Header.Set("User-Agent", userAgent)
+	res, err := (&http.Client{Timeout: 8 * time.Second}).Do(req)
+	if err != nil {
+		return false
+	}
+	res.Body.Close()
+	return res.StatusCode < 300 && !strings.Contains(res.Header.Get("Content-Type"), "html")
+}

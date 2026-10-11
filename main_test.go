@@ -235,8 +235,31 @@ func TestParseGarden(t *testing.T) {
 		{"name":"Solo YouTube","stream_urls":[],"youtube_urls":["https://youtu.be/x"]},
 		{"name":"TyC Sports","stream_urls":["https://x/tyc.m3u8"]}]`))
 	zw.Close()
-	got, err := parseGarden(buf.Bytes(), []Channel{{Name: "TyC Sports"}})
-	if err != nil || len(got) != 1 || got[0].Name != "Canal 7 Salta" || len(got[0].Options) != 2 || got[0].Options[0].URL != "https://x/a.m3u8" {
+	got, err := parseGarden(buf.Bytes())
+	if err != nil || len(got) != 2 || got[0].Name != "Canal 7 Salta" || len(got[0].Options) != 2 || got[0].Options[0].URL != "https://x/a.m3u8" {
 		t.Fatalf("parseGarden: %+v %v", got, err)
+	}
+}
+
+func TestWithGarden(t *testing.T) {
+	chs := []Channel{{Name: "Canal 26", Options: []Option{{Source: "S1", URL: "juanita"}}}, {Name: "C5N", Options: []Option{{URL: "c5n"}}}}
+	got := withGarden(chs, []Channel{{Name: "Canal 26", Slug: "canal-26", Options: []Option{{URL: "garden.m3u8"}}}})
+	if len(got[0].Options) != 2 || got[0].Options[1].URL != "garden.m3u8" || len(got[1].Options) != 1 || len(chs[0].Options) != 1 {
+		t.Fatalf("withGarden: %+v (original %+v)", got, chs)
+	}
+}
+
+func TestHealth(t *testing.T) {
+	report("x", false)
+	if down("x") {
+		t.Error("una caída no alcanza para ocultar")
+	}
+	report("x", false)
+	if !down("x") {
+		t.Error("2 caídas seguidas → oculto")
+	}
+	report("x", true)
+	if down("x") || down("nunca-chequeado") {
+		t.Error("vuelve al responder; sin chequear = visible")
 	}
 }
