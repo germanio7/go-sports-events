@@ -349,6 +349,14 @@ func stream(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing u", http.StatusBadRequest)
 		return
 	}
+	// con alguna opción ya en caché va directo: no espera a re-resolver las caídas (hay hosts que tardan
+	// 10-20s en fallar y Jellyfin corta antes). Los jobs de precalentado mantienen el caché al día.
+	for _, u := range embeds {
+		if v, ok := cacheGet("resolve:" + unwrap(u)); ok && strings.Contains(v.(string), ".m3u8") {
+			http.Redirect(w, r, v.(string), http.StatusFound)
+			return
+		}
+	}
 	resolved := resolveMany(embeds)
 	if !slices.ContainsFunc(embeds, func(u string) bool { return strings.Contains(resolved[u], ".m3u8") }) {
 		// todo falló en caché: el partido pudo arrancar recién → reintenta upstream ya en vez de 502.
