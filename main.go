@@ -210,14 +210,19 @@ func eventLogo(e Event) string {
 }
 
 // playlist (Jellyfin): un canal por partido con URL proxy estable; resuelve al .m3u8 al sintonizar.
-// ?full=1 una entrada por opción; ?resolve=1 .m3u8 inline (tokens expiran).
+// ?full=1 una entrada por opción; ?resolve=1 (implica full) .m3u8 inline (tokens expiran, sin failover):
+// las opciones sin .m3u8 vivo quedan con la URL proxy, y tvg-id fijo para que Jellyfin no cambie el id del canal con cada token.
 func playlist(w http.ResponseWriter, r *http.Request) {
 	events := getJuanita()
+	var resolved map[string]string
 	if truthy(r.URL.Query().Get("resolve")) {
-		directPlaylist(w, events)
-		return
+		var urls []string
+		for _, e := range events {
+			urls = append(urls, optionURLs(e.Options)...)
+		}
+		resolved = resolveMany(urls)
 	}
-	full, base, ch := truthy(r.URL.Query().Get("full")), baseURL(r), 999
+	full, base, ch := resolved != nil || truthy(r.URL.Query().Get("full")), baseURL(r), 999
 	lines := []string{"#EXTM3U"}
 	for _, e := range events {
 		if len(e.Options) == 0 {
@@ -232,24 +237,11 @@ func playlist(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, o := range e.Options {
 			ch++
-			lines = append(lines, extinf(id+"-"+slug(o.Source), ch, league, title+" — "+o.Source, eventLogo(e)), streamLink(base, "/api/juanita/stream", o.URL))
-		}
-	}
-	writeM3U(w, "juanita.m3u", lines)
-}
-
-func directPlaylist(w http.ResponseWriter, events []Event) {
-	var urls []string
-	for _, e := range events {
-		urls = append(urls, optionURLs(e.Options)...)
-	}
-	resolved := resolveMany(urls)
-	lines := []string{"#EXTM3U"}
-	for _, e := range events {
-		for _, o := range e.Options {
-			u := resolved[o.URL]
-			title := fmt.Sprintf("%s vs %s (%s) — %s", e.Home, e.Away, deref(e.Time, ""), o.Source)
-			lines = append(lines, fmt.Sprintf(`#EXTINF:-1%s group-title="%s",%s`, logoAttr(eventLogo(e)), m3u(deref(e.League, "Otros")), m3u(title)), u)
+			link := streamLink(base, "/api/juanita/stream", o.URL)
+			if m := resolved[o.URL]; strings.Contains(m, ".m3u8") {
+				link = m
+			}
+			lines = append(lines, extinf(id+"-"+slug(o.Source), ch, league, title+" — "+o.Source, eventLogo(e)), link)
 		}
 	}
 	writeM3U(w, "juanita.m3u", lines)
