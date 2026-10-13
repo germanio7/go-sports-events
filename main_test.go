@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/base64"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -261,5 +264,42 @@ func TestHealth(t *testing.T) {
 	report("x", true)
 	if down("x") || down("nunca-chequeado") {
 		t.Error("vuelve al responder; sin chequear = visible")
+	}
+}
+
+func TestRelay(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/live.m3u8":
+			fmt.Fprint(w, "#EXTM3U\n#EXT-X-TARGETDURATION:5\n#EXT-X-MEDIA-SEQUENCE:40\n#EXTINF:5.0,\na/40.ts?t=x\n#EXTINF:5.0,\na/41.ts?t=x\n#EXTINF:5.0,\na/42.ts?t=x\n")
+		case "/master.m3u8":
+			fmt.Fprint(w, "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nlive.m3u8\n")
+		case "/a/41.ts":
+			http.NotFound(w, r) // segmento caído: se saltea
+		default:
+			fmt.Fprint(w, "seg"+path.Base(r.URL.Path))
+		}
+	}))
+	defer up.Close()
+	if _, ok := startRelay(up.URL + "/master.m3u8"); ok {
+		t.Error("master no se relaya")
+	}
+	id, ok := startRelay(up.URL + "/live.m3u8")
+	if !ok {
+		t.Fatal("relay no arrancó")
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/juanita/hls/{id}/{file}", hlsFile)
+	get := func(file string) string {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest("GET", "/api/juanita/hls/"+id+"/"+file, nil))
+		return rec.Body.String()
+	}
+	want := "#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:5.0,\n0.ts\n#EXTINF:5.0,\n1.ts\n"
+	if list := get("live.m3u8"); !strings.HasSuffix(list, want) {
+		t.Errorf("playlist: %q", list)
+	}
+	if b0, b1 := get("0.ts"), get("1.ts"); b0 != "seg40.ts" || b1 != "seg42.ts" {
+		t.Errorf("segmentos: %q %q", b0, b1)
 	}
 }

@@ -102,6 +102,7 @@ func main() {
 	mux.HandleFunc("GET /api/tvgarden/radio.m3u", gardenPlaylist("radio", 2000, "tvgarden-radio.m3u"))
 	mux.HandleFunc("GET /api/juanita/stream", stream)
 	mux.HandleFunc("GET /api/juanita/tv/stream", stream)
+	mux.HandleFunc("GET /api/juanita/hls/{id}/{file}", hlsFile)
 
 	addr := ":" + env("PORT", "8080")
 	log.Printf("listening on %s", addr)
@@ -211,7 +212,9 @@ func eventLogo(e Event) string {
 
 // playlist (Jellyfin): un canal por partido con URL proxy estable; resuelve al .m3u8 al sintonizar.
 // ?full=1 una entrada por opción; ?resolve=1 (implica full) .m3u8 inline (tokens expiran, sin failover):
-// las opciones sin .m3u8 vivo quedan con la URL proxy, y tvg-id fijo para que Jellyfin no cambie el id del canal con cada token.
+// las opciones sin .m3u8 vivo quedan con la URL proxy.
+// &ch=: Jellyfin arma el id del canal con la URL; sin esto dos partidos con el mismo embed (ESPN en dos
+// partidos del día) quedan como un solo canal y uno desaparece. /stream lo ignora.
 func playlist(w http.ResponseWriter, r *http.Request) {
 	events := getJuanita()
 	var resolved map[string]string
@@ -232,16 +235,17 @@ func playlist(w http.ResponseWriter, r *http.Request) {
 		title := matchTitle(e)
 		if !full {
 			ch++
-			lines = append(lines, extinf(id, ch, league, title, eventLogo(e)), streamLink(base, "/api/juanita/stream", optionURLs(latamFirst(e.Options))...))
+			lines = append(lines, extinf(id, ch, league, title, eventLogo(e)), streamLink(base, "/api/juanita/stream", optionURLs(latamFirst(e.Options))...)+"&ch="+id)
 			continue
 		}
 		for _, o := range e.Options {
 			ch++
-			link := streamLink(base, "/api/juanita/stream", o.URL)
+			chID := id + "-" + slug(o.Source)
+			link := streamLink(base, "/api/juanita/stream", o.URL) + "&ch=" + chID
 			if m := resolved[o.URL]; strings.Contains(m, ".m3u8") {
 				link = m
 			}
-			lines = append(lines, extinf(id+"-"+slug(o.Source), ch, league, title+" — "+o.Source, eventLogo(e)), link)
+			lines = append(lines, extinf(chID, ch, league, title+" — "+o.Source, eventLogo(e)), link)
 		}
 	}
 	writeM3U(w, "juanita.m3u", lines)
@@ -333,7 +337,7 @@ func gardenPlaylist(kind string, chno int, filename string) http.HandlerFunc {
 	}
 }
 
-// stream: 302 al primer .m3u8 vivo, en el orden de upstream (la primera suele ser HD).
+// stream: 302 al primer .m3u8 vivo (vía relay, ver hls.go), en el orden de upstream (la primera suele ser HD).
 // Acepta `u=` repetido y `u[0]=` (playlists generadas por la versión Laravel).
 func stream(w http.ResponseWriter, r *http.Request) {
 	var embeds []string
@@ -353,7 +357,7 @@ func stream(w http.ResponseWriter, r *http.Request) {
 	// 10-20s en fallar y Jellyfin corta antes). Los jobs de precalentado mantienen el caché al día.
 	for _, u := range embeds {
 		if v, ok := cacheGet("resolve:" + unwrap(u)); ok && strings.Contains(v.(string), ".m3u8") {
-			http.Redirect(w, r, v.(string), http.StatusFound)
+			redirectHLS(w, r, v.(string))
 			return
 		}
 	}
@@ -367,7 +371,7 @@ func stream(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, u := range embeds {
 		if t := resolved[u]; strings.Contains(t, ".m3u8") {
-			http.Redirect(w, r, t, http.StatusFound)
+			redirectHLS(w, r, t)
 			return
 		}
 	}
