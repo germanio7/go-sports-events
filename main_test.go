@@ -82,6 +82,16 @@ func TestParseJuanitaRelativeEmbed(t *testing.T) {
 	}
 }
 
+func TestParseJuanitaSinVs(t *testing.T) {
+	var it juanitaItem
+	it.Attributes.Desc = "Fórmula 1: \nGP de México"
+	it.Attributes.Hour = "15:00:00"
+	e, ok := parseJuanitaItem(it)
+	if !ok || deref(e.League, "") != "Fórmula 1" || e.Home != "GP de México" || e.Away != "" || matchTitle(e) != "GP de México (17:00)" {
+		t.Fatalf("bad event: %+v", e)
+	}
+}
+
 func TestExtinfLogo(t *testing.T) {
 	logo := "https://x/l.png"
 	if got := extinf("a", 7, "G", "T", eventLogo(Event{AwayLogo: &logo})); got != `#EXTINF:-1 tvg-id="a" tvg-chno="7" tvg-logo="https://x/l.png" group-title="G",T` {

@@ -200,9 +200,17 @@ func logoAttr(logo string) string {
 	return fmt.Sprintf(` tvg-logo="%s"`, logo)
 }
 
+// eventName: "Local vs Visitante", o el título solo si no es un partido (F1, UFC…).
+func eventName(e Event) string {
+	if e.Away == "" {
+		return e.Home
+	}
+	return e.Home + " vs " + e.Away
+}
+
 // matchTitle: nombre del canal del partido en la playlist (Jellyfin lo reporta así en /Sessions).
 func matchTitle(e Event) string {
-	return fmt.Sprintf("%s vs %s (%s)", e.Home, e.Away, deref(e.Time, ""))
+	return fmt.Sprintf("%s (%s)", eventName(e), deref(e.Time, ""))
 }
 
 // eventLogo: un canal = un logo; local, o visitante si falta.
@@ -231,7 +239,7 @@ func playlist(w http.ResponseWriter, r *http.Request) {
 		if len(e.Options) == 0 {
 			continue
 		}
-		league, id := deref(e.League, "Otros"), slug(e.Home+" vs "+e.Away)
+		league, id := deref(e.League, "Otros"), slug(eventName(e))
 		title := matchTitle(e)
 		if !full {
 			ch++
@@ -276,7 +284,7 @@ func epg(w http.ResponseWriter, r *http.Request) {
 		if len(e.Options) == 0 || t == nil {
 			continue
 		}
-		id, name := slug(e.Home+" vs "+e.Away), e.Home+" vs "+e.Away
+		id, name := slug(eventName(e)), eventName(e)
 		sources := make([]string, len(e.Options))
 		for i, o := range e.Options {
 			sources[i] = o.Source

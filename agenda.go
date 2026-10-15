@@ -285,9 +285,16 @@ func parseJuanitaItem(it juanitaItem) (Event, bool) {
 	if c := a.Country.Data.Attributes.Name; c != "" {
 		country = &c
 	}
-	league, home, away, ok := matchup(collapse(a.Desc), country)
-	if !ok {
-		return Event{}, false
+	desc := collapse(a.Desc)
+	league, home, away, ok := matchup(desc, country)
+	if !ok { // sin "vs" (F1, UFC…): el título va entero como local, como en streamed
+		league, home = country, desc
+		if m := reLeague.FindStringSubmatch(desc); m != nil {
+			league, home = ptr(strings.TrimSpace(m[1])), strings.TrimSpace(m[2])
+		}
+		if home == "" {
+			return Event{}, false
+		}
 	}
 
 	// Upstream guarda hora UTC-5 fija → AR (UTC-3).
