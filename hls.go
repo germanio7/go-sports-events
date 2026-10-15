@@ -39,6 +39,7 @@ type relay struct {
 	out     []*segment       // publicados, en orden
 	base    int              // media sequence de out[0]
 	seen    time.Time
+	fresh   time.Time // último segmento nuevo en upstream, para loguear cortes de la fuente
 }
 
 var relays = struct {
@@ -55,7 +56,7 @@ func startRelay(src string) (string, bool) {
 	if r != nil {
 		return id, true
 	}
-	r = &relay{src: src, pending: map[int]*segment{}, seen: time.Now()}
+	r = &relay{src: src, pending: map[int]*segment{}, seen: time.Now(), fresh: time.Now()}
 	if !r.poll(true) { // fuera del lock global: el upstream puede tardar 10s
 		return "", false
 	}
@@ -108,15 +109,29 @@ func (r *relay) poll(first bool) bool {
 		}
 		r.pending[n] = s
 		r.last = max(r.last, n)
+		r.fresh = time.Now()
 		go r.download(s)
+	}
+	if stall := time.Since(r.fresh); stall > time.Duration(2*target)*time.Second {
+		log.Printf("hls %s: la fuente no publica segmentos nuevos hace %v", r.name(), stall.Round(time.Second))
 	}
 	return true
 }
 
+// name: src sin el query (los tokens no van al log).
+func (r *relay) name() string {
+	name, _, _ := strings.Cut(r.src, "?")
+	return name
+}
+
 func (r *relay) download(s *segment) {
+	t0 := time.Now()
 	b, err := fetch(s.url, 2, time.Second, 20*time.Second, nil)
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if took := time.Since(t0); err != nil || took > time.Duration(r.target)*time.Second {
+		log.Printf("hls %s: segmento en %v (err=%v)", r.name(), took.Round(time.Millisecond), err != nil)
+	}
 	s.data, s.state = b, 1
 	if err != nil {
 		s.state = 2
