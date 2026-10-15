@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -15,8 +16,9 @@ import (
 // cada uno; ffmpeg baja de a uno, se atrasa y salta ("skipping N segments ahead") → el reproductor se traba.
 // El relay recarga el playlist upstream cada target/2, baja en paralelo cada segmento apenas aparece y publica
 // en orden los ya bajados, guardando los últimos relayKeep. Jellyfin lee de acá en vez del CDN.
+// Con una playlist maestra relaya una sola variante (bestVariant).
 // ponytail: segmentos en memoria (~1MB c/u × relayKeep por partido mirado); solo playlists de media sin cifrar,
-// master/KEY/MAP/VOD siguen con 302 al upstream.
+// KEY/MAP/VOD y maestras con EXT-X-MEDIA siguen con 302 al upstream.
 
 const (
 	relayKeep = 12               // ~60s con segmentos de 5s
@@ -93,6 +95,10 @@ func (r *relay) poll(first bool) bool {
 		return false
 	}
 	seq, target, segs, ok := parseMedia(string(b), r.src)
+	if v := bestVariant(string(b), r.src); !ok && first && v != "" && v != r.src {
+		r.src = v // todavía no compartido: nadie más lo lee
+		return r.poll(true)
+	}
 	if !ok {
 		return false
 	}
@@ -234,6 +240,34 @@ func parseMedia(body, base string) (seq, target int, segs []*segment, ok bool) {
 		}
 	}
 	return seq, target, segs, len(segs) > 0 && target > 0
+}
+
+var reBandwidth = regexp.MustCompile(`(?:^|,)BANDWIDTH=(\d+)`)
+
+// bestVariant: la variante de más BANDWIDTH de una playlist maestra. Sin esto Jellyfin toma el video de la
+// mejor y el audio de la primera, y ffmpeg baja dos variantes al ritmo de la más lenta (La 100: 0.23x).
+// "" si no es maestra o trae audio/video aparte (EXT-X-MEDIA), que una sola variante no tendría.
+func bestVariant(body, base string) string {
+	if strings.Contains(body, "#EXT-X-MEDIA:") {
+		return ""
+	}
+	best, bw := "", -1
+	lines := strings.Split(body, "\n")
+	for i, l := range lines {
+		attrs, ok := strings.CutPrefix(strings.TrimSpace(l), "#EXT-X-STREAM-INF:")
+		if !ok || i+1 == len(lines) {
+			continue
+		}
+		uri := strings.TrimSpace(lines[i+1])
+		m := reBandwidth.FindStringSubmatch(attrs)
+		if uri == "" || strings.HasPrefix(uri, "#") || m == nil {
+			continue
+		}
+		if n, _ := strconv.Atoi(m[1]); n > bw {
+			best, bw = absolute(uri, base), n
+		}
+	}
+	return best
 }
 
 // redirectHLS: al relay si el upstream es una playlist que sabe relayar; si no, directo al upstream como antes.

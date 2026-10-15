@@ -50,6 +50,10 @@ func resolveMany(urls []string) map[string]string {
 				results[orig] = target
 				continue
 			}
+			if strings.HasPrefix(strings.TrimSpace(body), "#EXTM3U") { // ya es la playlist (tvgarden): no buscar URIs adentro
+				results[orig] = target
+				continue
+			}
 			if m := extractM3u8(body); m != "" {
 				results[orig] = m
 				continue

@@ -283,7 +283,9 @@ func TestRelay(t *testing.T) {
 		case "/live.m3u8":
 			fmt.Fprint(w, "#EXTM3U\n#EXT-X-TARGETDURATION:5\n#EXT-X-MEDIA-SEQUENCE:40\n#EXTINF:5.0,\na/40.ts?t=x\n#EXTINF:5.0,\na/41.ts?t=x\n#EXTINF:5.0,\na/42.ts?t=x\n")
 		case "/master.m3u8":
-			fmt.Fprint(w, "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nlive.m3u8\n")
+			fmt.Fprint(w, "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=900\nlow.m3u8\n#EXT-X-STREAM-INF:AVERAGE-BANDWIDTH=1,BANDWIDTH=2000\nlive.m3u8\n")
+		case "/alt.m3u8":
+			fmt.Fprint(w, "#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"a\",URI=\"a.m3u8\"\n#EXT-X-STREAM-INF:BANDWIDTH=1,AUDIO=\"a\"\nlive.m3u8\n")
 		case "/a/41.ts":
 			http.NotFound(w, r) // segmento caído: se saltea
 		default:
@@ -291,10 +293,10 @@ func TestRelay(t *testing.T) {
 		}
 	}))
 	defer up.Close()
-	if _, ok := startRelay(up.URL + "/master.m3u8"); ok {
-		t.Error("master no se relaya")
+	if _, ok := startRelay(up.URL + "/alt.m3u8"); ok {
+		t.Error("maestra con audio aparte no se relaya")
 	}
-	id, ok := startRelay(up.URL + "/live.m3u8")
+	id, ok := startRelay(up.URL + "/master.m3u8") // relaya la variante de más BANDWIDTH: live.m3u8
 	if !ok {
 		t.Fatal("relay no arrancó")
 	}

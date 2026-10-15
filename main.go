@@ -98,8 +98,8 @@ func main() {
 		w.Header().Set("Cache-Control", "public, max-age=604800")
 		w.Write(b)
 	})
-	mux.HandleFunc("GET /api/tvgarden/playlist.m3u", gardenPlaylist("tv", 500, "tvgarden.m3u"))
-	mux.HandleFunc("GET /api/tvgarden/radio.m3u", gardenPlaylist("radio", 2000, "tvgarden-radio.m3u"))
+	mux.HandleFunc("GET /api/tvgarden/playlist.m3u", gardenPlaylist("tv", 3000, "tvgarden.m3u"))
+	mux.HandleFunc("GET /api/tvgarden/radio.m3u", gardenPlaylist("radio", 4000, "tvgarden-radio.m3u"))
 	mux.HandleFunc("GET /api/juanita/stream", stream)
 	mux.HandleFunc("GET /api/juanita/tv/stream", stream)
 	mux.HandleFunc("GET /api/juanita/hls/{id}/{file}", hlsFile)
@@ -188,7 +188,8 @@ func optionURLs(opts []Option) []string {
 	return out
 }
 
-// extinf: tvg-chno ordena la lista de Canales de Jellyfin (24/7 desde 1, partidos desde 1000 → al final).
+// extinf: tvg-chno ordena la lista de Canales de Jellyfin: 24/7 desde 1, partidos desde 1000, tvgarden tv desde 3000
+// y radio desde 4000 (al final). Rangos holgados: la grilla 24/7 con full=1 llegó a pasar de 500 entradas.
 func extinf(id string, chno int, group, title, logo string) string {
 	return fmt.Sprintf(`#EXTINF:-1 tvg-id="%s" tvg-chno="%d"%s group-title="%s",%s`, id, chno, logoAttr(logo), m3u(group), m3u(title))
 }
@@ -325,9 +326,9 @@ func tvPlaylist(w http.ResponseWriter, r *http.Request) {
 	writeM3U(w, "juanita-tv.m3u", lines)
 }
 
-// gardenPlaylist: canales/radios abiertos de tvgarden con su stream directo (públicos, sin token: no pasan por /stream).
-// Oculta los caídos en los últimos 2 chequeos (checkGarden).
-// tv desde 500 (entre la grilla 24/7 y los partidos), radio desde 2000 (al final) y con radio="true" para Jellyfin.
+// gardenPlaylist: canales/radios abiertos de tvgarden. La tv pasa por /stream → relay (una sola variante y prefetch);
+// la radio va directa (stream de audio, no HLS). Oculta los caídos en los últimos 2 chequeos (checkGarden).
+// Numeración: ver extinf. La radio va con radio="true" para Jellyfin.
 func gardenPlaylist(kind string, chno int, filename string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		lines := []string{"#EXTM3U"}
@@ -339,7 +340,11 @@ func gardenPlaylist(kind string, chno int, filename string) http.HandlerFunc {
 			if kind == "radio" {
 				inf = strings.Replace(extinf(c.Slug, chno+i, "Radio", c.Name, ""), "#EXTINF:-1 ", `#EXTINF:-1 radio="true" `, 1)
 			}
-			lines = append(lines, inf, c.Options[0].URL)
+			u := c.Options[0].URL
+			if kind == "tv" {
+				u = streamLink(baseURL(r), "/api/juanita/tv/stream", u)
+			}
+			lines = append(lines, inf, u)
 		}
 		writeM3U(w, filename, lines)
 	}
