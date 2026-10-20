@@ -10,7 +10,9 @@ import (
 	"path"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestParsePelota(t *testing.T) {
@@ -313,5 +315,39 @@ func TestRelay(t *testing.T) {
 	}
 	if b0, b1 := get("0.ts"), get("1.ts"); b0 != "seg40.ts" || b1 != "seg42.ts" {
 		t.Errorf("segmentos: %q %q", b0, b1)
+	}
+}
+
+func TestRelayHedge(t *testing.T) {
+	var mu sync.Mutex
+	hits := 0
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/live.m3u8" {
+			fmt.Fprint(w, "#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXT-X-MEDIA-SEQUENCE:1\n#EXTINF:1.0,\nslow.ts\n")
+			return
+		}
+		mu.Lock()
+		hits++
+		first := hits == 1
+		mu.Unlock()
+		if first {
+			time.Sleep(3 * time.Second) // a cuentagotas
+		}
+		fmt.Fprint(w, "seg")
+	}))
+	defer up.Close()
+	id, ok := startRelay(up.URL + "/live.m3u8")
+	if !ok {
+		t.Fatal("relay no arrancó")
+	}
+	relays.Lock()
+	r := relays.m[id]
+	relays.Unlock()
+	t0 := time.Now()
+	r.playlist() // espera a que el segmento esté publicado
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.out) != 1 || string(r.out[0].data) != "seg" || time.Since(t0) > 2500*time.Millisecond {
+		t.Errorf("sin segundo pedido: %d segmentos en %v", len(r.out), time.Since(t0))
 	}
 }

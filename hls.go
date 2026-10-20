@@ -130,16 +130,38 @@ func (r *relay) name() string {
 	return name
 }
 
+// download pide el segmento otra vez, en paralelo, si el primer pedido falla o tarda más que un segmento: el CDN
+// manda ~1 de cada 3 a cuentagotas (20-40s) y frena la cola de publish, mientras que otro pedido sale en 2-5s.
 func (r *relay) download(s *segment) {
 	t0 := time.Now()
-	b, err := fetch(s.url, 2, time.Second, 20*time.Second, nil)
+	r.mu.Lock()
+	hedge := time.After(time.Duration(r.target) * time.Second)
+	r.mu.Unlock()
+	ch := make(chan []byte, 2) // nil = falló
+	get := func() {
+		b, _ := fetchOnce(&http.Client{Timeout: 20 * time.Second}, s.url, nil)
+		ch <- b
+	}
+	go get()
+	var b []byte
+	for tries, running := 1, 1; b == nil && running > 0; {
+		select {
+		case b = <-ch:
+			running--
+		case <-hedge:
+		}
+		if b == nil && tries < 2 {
+			tries, running = tries+1, running+1
+			go get()
+		}
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if took := time.Since(t0); err != nil || took > time.Duration(r.target)*time.Second {
-		log.Printf("hls %s: segmento en %v (err=%v)", r.name(), took.Round(time.Millisecond), err != nil)
+	if took := time.Since(t0); b == nil || took > time.Duration(r.target)*time.Second {
+		log.Printf("hls %s: segmento en %v (err=%v)", r.name(), took.Round(time.Millisecond), b == nil)
 	}
 	s.data, s.state = b, 1
-	if err != nil {
+	if b == nil {
 		s.state = 2
 	}
 	r.publish()
