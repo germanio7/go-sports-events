@@ -46,7 +46,11 @@ var db *pgxpool.Pool
 func initDB() {
 	ctx := context.Background()
 	var err error
-	if db, err = pgxpool.New(ctx, env("DATABASE_URL", "")); err == nil {
+	dsn := env("DATABASE_URL", "")
+	if dsn == "" {
+		log.Fatal("db: falta DATABASE_URL (la imagen sola no la trae: levantar con docker-compose.yml)")
+	}
+	if db, err = pgxpool.New(ctx, dsn); err == nil {
 		_, err = db.Exec(ctx, schema)
 	}
 	if err != nil {
