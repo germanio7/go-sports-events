@@ -4,6 +4,14 @@
 docker compose up --build   # http://localhost:83
 ```
 
+## Dokploy
+
+Servicio tipo **Docker Compose** (no Stack: Stack no soporta `build`), repo `germanio7/go-sports-events`, rama `main`, compose path `./docker-compose.yml`, sin dominio (Jellyfin entra por `IP:83`).
+
+- Environment: `JELLYFIN_URL`, `JELLYFIN_API_KEY` y, si 5432 está ocupado en el server, `DB_PORT`. Dokploy los escribe en `.env` y el compose los pasa uno por uno.
+- Antes del primer deploy, bajar el `docker compose` viejo del mismo server: si no, choca el puerto 83.
+- La BD arranca vacía y el sync la llena en ~2 min.
+
 ## Base de datos
 
 Postgres (servicio `db` en compose, `DATABASE_URL` obligatoria). El server corre dos jobs:
